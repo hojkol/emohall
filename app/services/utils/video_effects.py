@@ -1,4 +1,13 @@
-from moviepy import Clip, vfx
+# MoviePy imports with fallback for different versions
+try:
+    from moviepy.editor import Clip, vfx
+except ImportError:
+    try:
+        from moviepy import Clip, vfx
+    except ImportError:
+        # Fallback for older versions
+        from moviepy.video.VideoClip import Clip
+        from moviepy import vfx
 
 
 # FadeIn
