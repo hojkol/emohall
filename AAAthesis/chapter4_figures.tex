@@ -1,0 +1,542 @@
+% ============================================================================
+% 数字人视频生成系统论文 - 系统架构图表文件
+% ============================================================================
+% 注意：此文件需要在主文档中包含，宏包声明应在主文档中进行
+% 如果单独使用此文件，请确保在 \documentclass 之后添加以下宏包：
+%   \usepackage{tikz}
+%   \usetikzlibrary{shapes,arrows,positioning,calc,shapes.geometric,chains}
+% ============================================================================
+
+% ============================================================================
+% 图1：系统五层架构图
+% ============================================================================
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[
+        scale=0.9,
+        node distance=1.5cm,
+        auto,
+        font=\small,
+        box/.style={rectangle, draw, thick, minimum width=7cm, minimum height=0.8cm,
+                    text centered, fill=blue!10},
+        title/.style={text centered, font=\large\bfseries},
+        arrow/.style={->, thick, line width=1.5pt}
+    ]
+
+    % 标题
+    \node[title] at (3.5, 9) {系统五层分层架构设计};
+
+    % 展示层
+    \node[box, fill=cyan!20] (presentation) at (3.5, 7.5) {
+        \textbf{展示层（Presentation Layer）}\\
+        Streamlit Web UI (Port 8501)
+    };
+
+    % HTTP 通信
+    \node[text centered] at (3.5, 6.8) {$\Downarrow$ HTTP REST 通信 $\Downarrow$};
+
+    % API 层
+    \node[box, fill=green!20] (api) at (3.5, 6) {
+        \textbf{API 层（API Layer）}\\
+        FastAPI + Uvicorn (Port 8001)
+    };
+
+    % 函数调用
+    \node[text centered] at (3.5, 5.3) {$\Downarrow$ 函数调用 $\Downarrow$};
+
+    % 服务层
+    \node[box, fill=yellow!20, minimum width=8cm] (service) at (3.5, 4.5) {
+        \textbf{服务层（Service Layer）}\\
+        TaskManager | StateManager | ModelRegistry
+    };
+
+    % 函数调用
+    \node[text centered] at (3.5, 3.8) {$\Downarrow$ 函数调用 $\Downarrow$};
+
+    % 推理层
+    \node[box, fill=orange!20, minimum width=8cm] (inference) at (3.5, 3) {
+        \textbf{推理层（Inference Layer）}\\
+        Hallo2 Pipeline | 数据处理器
+    };
+
+    % 函数调用
+    \node[text centered] at (3.5, 2.3) {$\Downarrow$ 函数调用 $\Downarrow$};
+
+    % 模型层
+    \node[box, fill=red!20, minimum width=8cm] (model) at (3.5, 1.5) {
+        \textbf{模型层（Model Layer）}\\
+        PyTorch + CUDA + 预训练模型
+    };
+
+    % 右侧说明
+    \node[text centered, anchor=west] at (11.5, 7.5) {\small \textbf{用户交互}};
+    \node[text centered, anchor=west, font=\tiny] at (11.5, 7.1) {文件上传、参数配置};
+
+    \node[text centered, anchor=west] at (11.5, 6) {\small \textbf{请求处理}};
+    \node[text centered, anchor=west, font=\tiny] at (11.5, 5.6) {参数验证、路由};
+
+    \node[text centered, anchor=west] at (11.5, 4.5) {\small \textbf{业务逻辑}};
+    \node[text centered, anchor=west, font=\tiny] at (11.5, 4.1) {任务管理、状态管理};
+
+    \node[text centered, anchor=west] at (11.5, 3) {\small \textbf{核心推理}};
+    \node[text centered, anchor=west, font=\tiny] at (11.5, 2.6) {模型执行、数据处理};
+
+    \node[text centered, anchor=west] at (11.5, 1.5) {\small \textbf{硬件基础}};
+    \node[text centered, anchor=west, font=\tiny] at (11.5, 1.1) {深度学习框架};
+
+    \end{tikzpicture}
+    \caption{数字人视频生成系统五层分层架构}
+    \label{fig:system_architecture_layers}
+\end{figure}
+
+% ============================================================================
+% 图2：任务状态机图
+% ============================================================================
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[
+        scale=1,
+        node distance=2cm,
+        auto,
+        state/.style={circle, draw, thick, minimum width=1.5cm, text centered},
+        transition/.style={->, thick, bend left},
+        font=\small
+    ]
+
+    % 标题
+    \node[text centered] at (3.5, 4.5) {\large \textbf{任务生命周期状态机}};
+
+    % 状态节点
+    \node[state, fill=yellow!40] (pending) at (1, 2.5) {Pending\\(等待)};
+    \node[state, fill=cyan!40] (running) at (3.5, 2.5) {Running\\(运行)};
+    \node[state, fill=green!40] (completed) at (6, 2.5) {Completed\\(完成)};
+    \node[state, fill=red!40] (failed) at (6, 0.5) {Failed\\(失败)};
+
+    % 状态转移
+    \draw[transition] (pending) to node[above] {submit} (running);
+    \draw[transition] (running) to node[above] {success} (completed);
+    \draw[transition] (running) to node[right] {error} (failed);
+    \draw[transition] (pending) to node[left] {cancel} (failed);
+
+    % 说明文字
+    \node[text centered, font=\tiny] at (1, 1.5) {API已接受\\等待执行};
+    \node[text centered, font=\tiny] at (3.5, 1.5) {推理进行中\\实时更新进度};
+    \node[text centered, font=\tiny] at (6, 1.5) {视频已生成\\可下载};
+    \node[text centered, font=\tiny] at (6, -0.5) {推理失败\\保存错误日志};
+
+    \end{tikzpicture}
+    \caption{任务生命周期状态机}
+    \label{fig:task_state_machine}
+\end{figure}
+
+% ============================================================================
+% 图3：完整数据流程图
+% ============================================================================
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[
+        scale=0.8,
+        node distance=1.5cm,
+        auto,
+        font=\small,
+        flow_box/.style={rectangle, draw, thick, minimum width=2.5cm, minimum height=0.6cm,
+                         text centered},
+        process/.style={rounded rectangle, draw, thick, minimum width=2.5cm,
+                        minimum height=0.6cm, text centered},
+        arrow/.style={->, thick}
+    ]
+
+    % 第一行：用户和前端
+    \node[flow_box, fill=cyan!20] (user) at (1, 7) {用户};
+    \node[process, fill=cyan!30] (upload) at (1, 5.5) {上传图像\\和音频};
+
+    % 第二行：前端处理
+    \node[process, fill=green!30] (validate) at (1, 4) {参数验证\\文件检查};
+    \node[process, fill=green!30] (request) at (3.5, 4) {HTTP POST\\请求};
+
+    % 第三行：API 层
+    \node[process, fill=yellow!30] (api_process) at (3.5, 2.5) {API 验证\\创建任务};
+    \node[process, fill=yellow!30] (queue) at (6, 2.5) {加入\\任务队列};
+
+    % 第四行：后台处理
+    \node[process, fill=orange!30] (preprocess) at (1.5, 1) {预处理};
+    \node[process, fill=orange!30] (inference) at (3.5, 1) {推理};
+    \node[process, fill=orange!30] (postprocess) at (5.5, 1) {后处理};
+
+    % 第五行：输出
+    \node[process, fill=red!30] (save) at (3.5, -0.5) {保存视频};
+    \node[flow_box, fill=cyan!20] (download) at (5.5, -0.5) {用户下载};
+
+    % 连接箭头
+    \draw[arrow] (user) -- (upload);
+    \draw[arrow] (upload) -- (validate);
+    \draw[arrow] (validate) -- (request);
+    \draw[arrow] (request) -- (api_process);
+    \draw[arrow] (api_process) -- (queue);
+    \draw[arrow] (queue) -- (preprocess);
+    \draw[arrow] (preprocess) -- (inference);
+    \draw[arrow] (inference) -- (postprocess);
+    \draw[arrow] (postprocess) -- (save);
+    \draw[arrow] (save) -- (download);
+
+    % 回程箭头（实时更新）
+    \draw[dashed, arrow] (queue.north) -- (1.5, 3) -- (1, 3.5) [out=90];
+    \node[font=\tiny] at (0.5, 3.2) {轮询};
+
+    \node[text centered] at (3.5, 8) {\textbf{完整的数据流程}};
+
+    \end{tikzpicture}
+    \caption{用户请求到视频输出的完整数据流程}
+    \label{fig:complete_data_flow}
+\end{figure}
+
+% ============================================================================
+% 图4：Hallo2 推理管道三阶段流程
+% ============================================================================
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[
+        scale=1,
+        node distance=2cm,
+        auto,
+        stage_box/.style={rectangle, draw=thick, fill=blue!20, minimum width=2.2cm,
+                          minimum height=1cm, text centered},
+        process_box/.style={rectangle, draw, fill=green!20, minimum width=1.8cm,
+                            minimum height=0.5cm, text centered, font=\tiny},
+        arrow/.style={->, thick, line width=1.5pt}
+    ]
+
+    % 标题
+    \node[text centered] at (6, 5.5) {\Large \textbf{Hallo2 推理管道三阶段流程}};
+
+    % 输入
+    \node at (0.8, 4) {\textbf{输入}};
+    \node[process_box] (img) at (0.8, 3.3) {人物图像};
+    \node[process_box] (audio) at (0.8, 2.5) {音频文件};
+
+    % 阶段1：预处理
+    \node[stage_box, fill=cyan!30] (stage1) at (3, 3) {
+        \textbf{预处理}\\
+        \small Preprocessing
+    };
+    \node[process_box, fill=cyan!20] at (3, 1.8) {人脸检测\\掩码生成};
+    \node[process_box, fill=cyan!20] at (3, 1.2) {音频分离\\特征提取};
+
+    % 箭头
+    \draw[arrow] (img) -- (1.8, 3);
+    \draw[arrow] (audio) -- (1.8, 2.5);
+    \draw[arrow] (1.8, 3) -- (3, 3);
+
+    % 阶段2：推理
+    \node[stage_box, fill=orange!30] (stage2) at (6, 3) {
+        \textbf{推理}\\
+        \small Inference
+    };
+    \node[process_box, fill=orange!20] at (6, 1.8) {VAE编码\\条件融合};
+    \node[process_box, fill=orange!20] at (6, 1.2) {扩散逆向\\生成视频};
+
+    \draw[arrow] (stage1) -- (stage2);
+
+    % 阶段3：后处理
+    \node[stage_box, fill=red!30] (stage3) at (9, 3) {
+        \textbf{后处理}\\
+        \small Postprocessing
+    };
+    \node[process_box, fill=red!20] at (9, 1.8) {VAE解码\\视频编码};
+    \node[process_box, fill=red!20] at (9, 1.2) {音频混合\\文件输出};
+
+    \draw[arrow] (stage2) -- (stage3);
+
+    % 输出
+    \node at (11.2, 3) {\textbf{输出}};
+    \draw[arrow] (stage3) -- (11.2, 3.3);
+    \node[process_box, fill=green!40] at (11.2, 2.5) {MP4视频文件};
+
+    \end{tikzpicture}
+    \caption{Hallo2 推理管道三阶段流程（预处理-推理-后处理）}
+    \label{fig:hallo2_pipeline}
+\end{figure}
+
+% ============================================================================
+% 图5：模块依赖关系图
+% ============================================================================
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[
+        scale=0.9,
+        node distance=1.5cm,
+        auto,
+        module/.style={rectangle, draw, thick, fill=blue!20, minimum width=1.5cm,
+                       minimum height=0.6cm, text centered, font=\small},
+        core/.style={rectangle, draw, thick, fill=red!30, minimum width=1.8cm,
+                     minimum height=0.6cm, text centered, font=\small},
+        dependency/.style={->, thick, dashed},
+        arrow/.style={->, thick}
+    ]
+
+    % 标题
+    \node[text centered] at (4.5, 7.5) {\Large \textbf{核心模块依赖关系}};
+
+    % 核心模块
+    \node[core] (api) at (1.5, 6) {FastAPI\\App};
+    \node[module] (task_mgr) at (1.5, 4.5) {TaskManager};
+    \node[module] (state_mgr) at (4.5, 4.5) {StateManager};
+    \node[module] (model_reg) at (7.5, 4.5) {ModelRegistry};
+
+    % 推理模块
+    \node[module] (pipeline) at (4.5, 3) {Hallo2Pipeline};
+
+    % 处理器模块
+    \node[module] (img_proc) at (1.5, 1.5) {ImageProcessor};
+    \node[module] (audio_proc) at (4.5, 1.5) {AudioProcessor};
+    \node[module] (mask_proc) at (7.5, 1.5) {MaskProcessor};
+
+    % 依赖关系
+    \draw[arrow] (api) -- (task_mgr);
+    \draw[arrow] (api) -- (state_mgr);
+    \draw[arrow] (task_mgr) -- (state_mgr);
+    \draw[arrow] (task_mgr) -- (model_reg);
+
+    \draw[arrow] (task_mgr) -- (pipeline);
+    \draw[arrow] (model_reg) -- (pipeline);
+
+    \draw[arrow] (pipeline) -- (img_proc);
+    \draw[arrow] (pipeline) -- (audio_proc);
+    \draw[arrow] (pipeline) -- (mask_proc);
+
+    % 说明
+    \node[font=\tiny, text centered] at (1.5, 0.5) {图像\\预处理};
+    \node[font=\tiny, text centered] at (4.5, 0.5) {音频\\预处理};
+    \node[font=\tiny, text centered] at (7.5, 0.5) {掩码\\处理};
+
+    \end{tikzpicture}
+    \caption{系统核心模块依赖关系}
+    \label{fig:module_dependency}
+\end{figure}
+
+% ============================================================================
+% 图6：GPU 内存管理流程
+% ============================================================================
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[
+        scale=0.85,
+        node distance=1.2cm,
+        auto,
+        memory_box/.style={rectangle, draw, thick, fill=green!20, minimum width=2.2cm,
+                           minimum height=0.55cm, text centered, font=\tiny},
+        control_box/.style={rounded rectangle, draw, thick, fill=orange!20,
+                            minimum width=2cm, minimum height=0.5cm, text centered, font=\tiny},
+        arrow/.style={->, thick}
+    ]
+
+    % 标题
+    \node[text centered] at (5, 7.5) {\Large \textbf{GPU 内存管理流程}};
+
+    % 上行：模型加载
+    \node[control_box] (detect_gpu) at (2, 6.5) {检测GPU};
+    \node[memory_box] (allocate) at (2, 5.5) {分配显存};
+    \node[control_box] (lazy_load) at (2, 4.5) {延迟加载};
+    \node[memory_box] (model_loaded) at (2, 3.5) {模型已加载};
+
+    \draw[arrow] (detect_gpu) -- (allocate);
+    \draw[arrow] (allocate) -- (lazy_load);
+    \draw[arrow] (lazy_load) -- (model_loaded);
+
+    % 中间：推理执行
+    \node[control_box] (inference) at (5, 5.5) {执行推理};
+    \node[memory_box] (temp_memory) at (5, 4.5) {临时显存占用};
+    \node[control_box] (monitor) at (5, 3.5) {监控占用};
+
+    \draw[arrow] (model_loaded) -- (inference);
+    \draw[arrow] (inference) -- (temp_memory);
+    \draw[arrow] (temp_memory) -- (monitor);
+
+    % 下行：内存管理
+    \node[control_box] (precision) at (8, 6.5) {多精度支持};
+    \node[memory_box] (float_type) at (8, 5.5) {float32/16};
+    \node[control_box] (checkpoint) at (8, 4.5) {梯度检查点};
+    \node[memory_box] (optimize) at (8, 3.5) {显存优化};
+
+    \draw[arrow] (precision) -- (float_type);
+    \draw[arrow] (float_type) -- (checkpoint);
+    \draw[arrow] (checkpoint) -- (optimize);
+
+    % 清理阶段
+    \node[control_box] (cleanup) at (5, 2) {执行清理};
+    \node[memory_box] (release) at (5, 0.8) {释放显存};
+
+    \draw[arrow] (monitor) -- (cleanup);
+    \draw[arrow] (optimize) -- (cleanup);
+    \draw[arrow] (cleanup) -- (release);
+
+    \end{tikzpicture}
+    \caption{GPU 显存管理流程}
+    \label{fig:gpu_memory_management}
+\end{figure}
+
+% ============================================================================
+% 图7：前端 UI 布局
+% ============================================================================
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[
+        scale=0.9,
+        node distance=0.5cm,
+        auto,
+        ui_box/.style={rectangle, draw, thick, minimum width=6cm, minimum height=0.8cm,
+                       text centered, font=\small},
+        section/.style={rectangle, draw=thick, minimum width=5.8cm, minimum height=0.7cm,
+                        text centered, font=\tiny, fill=blue!10}
+    ]
+
+    % 标题
+    \node[text centered] at (3.5, 9) {\Large \textbf{Streamlit 前端 UI 布局}};
+
+    % 页面框
+    \draw[thick] (0.2, 8.2) rectangle (6.8, -0.5);
+
+    % 标题栏
+    \node[ui_box, fill=cyan!30] at (3.5, 7.5) {数字人视频生成系统};
+
+    % 文件上传区
+    \node[section, fill=green!20] at (3.5, 6.8) {\textbf{📁 文件上传区}};
+    \node[section] at (3.5, 6.1) {$\square$ 上传人物图像 (JPG/PNG)};
+    \node[section] at (3.5, 5.5) {$\square$ 上传音频文件 (WAV/MP3)};
+
+    % 参数配置区
+    \node[section, fill=orange!20] at (3.5, 4.9) {\textbf{⚙️ 参数配置区}};
+    \node[section] at (3.5, 4.2) {$\bullet$ 分辨率: $\square$ | 帧率: $\square$ | 长度: $\square$};
+    \node[section] at (3.5, 3.6) {$\bullet$ 精度: ◉ float32 ○ float16 | $\square$ 启用缓存};
+
+    % 提交和进度
+    \node[section, fill=yellow!20] at (3.5, 3) {\textbf{▶️ 任务提交}};
+    \node[section] at (3.5, 2.4) {$[~~\text{生成视频}~~]$ 进度: [=====>---] 65\%};
+
+    % 结果展示
+    \node[section, fill=red!20] at (3.5, 1.8) {\textbf{🎬 结果展示}};
+    \node[section] at (3.5, 1.2) {$[~~\text{📥 下载视频}~~]$ 状态: 生成完成};
+
+    % 任务历史
+    \node[section, fill=purple!20] at (3.5, 0.6) {\textbf{📋 任务历史}};
+
+    \end{tikzpicture}
+    \caption{Streamlit 前端用户界面布局}
+    \label{fig:frontend_ui_layout}
+\end{figure}
+
+% ============================================================================
+% 图8：API 端点和数据流
+% ============================================================================
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[
+        scale=0.85,
+        node distance=1.5cm,
+        auto,
+        endpoint/.style={rectangle, draw, thick, fill=cyan!20, minimum width=2.2cm,
+                         minimum height=0.6cm, text centered, font=\tiny},
+        method/.style={text centered, font=\tiny\bfseries},
+        arrow/.style={->, thick}
+    ]
+
+    % 标题
+    \node[text centered] at (4.5, 8.5) {\Large \textbf{FastAPI 端点架构}};
+
+    % 健康检查组
+    \node[method] at (1.5, 7.5) {健康检查};
+    \node[endpoint, fill=green!30] (health1) at (1.5, 6.8) {GET /health};
+    \node[endpoint, fill=green!30] (health2) at (1.5, 6) {GET /api/v1/health};
+
+    % 推理端点组
+    \node[method] at (4.5, 7.5) {推理任务};
+    \node[endpoint, fill=blue!30] (inference_post) at (4.5, 6.8) {POST /inference/hallo2};
+    \node[endpoint, fill=blue!30] (inference_config) at (4.5, 6) {POST /inference/config};
+
+    % 任务管理组
+    \node[method] at (7.5, 7.5) {任务管理};
+    \node[endpoint, fill=orange!30] (tasks_list) at (7.5, 6.8) {GET /tasks};
+    \node[endpoint, fill=orange!30] (task_status) at (7.5, 6) {GET /tasks/\{id\}};
+
+    % 模型端点组
+    \node[method] at (10.5, 7.5) {模型信息};
+    \node[endpoint, fill=purple!30] (models_list) at (10.5, 6.8) {GET /models};
+    \node[endpoint, fill=purple!30] (model_info) at (10.5, 6) {GET /models/\{name\}};
+
+    % 结果下载
+    \node[method] at (4.5, 4.5) {结果下载};
+    \node[endpoint, fill=red!30] (download_video) at (4.5, 3.8) {GET /tasks/\{id\}/video};
+    \node[endpoint, fill=red!30] (download_logs) at (4.5, 3) {GET /tasks/\{id\}/logs};
+
+    % 删除操作
+    \node[endpoint, fill=red!30] (delete_task) at (7.5, 3.8) {DELETE /tasks/\{id\}};
+
+    % 数据流向箭头
+    \draw[arrow] (inference_post) -- (4.5, 5.2);
+    \node[text centered, font=\tiny] at (3.5, 5.2) {提交};
+
+    \draw[arrow] (4.5, 5.2) -- (task_status);
+    \node[text centered, font=\tiny] at (5.5, 5.5) {查询};
+
+    \draw[arrow] (task_status) -- (download_video);
+    \node[text centered, font=\tiny] at (6.5, 4.5) {下载};
+
+    \end{tikzpicture}
+    \caption{FastAPI 端点架构和数据流}
+    \label{fig:api_endpoints}
+\end{figure}
+
+% ============================================================================
+% 图9：系统时序图（完整交互过程）
+% ============================================================================
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[
+        scale=0.8,
+        node distance=1cm,
+        auto,
+        participant/.style={rectangle, draw, thick, minimum width=1.5cm, text centered, font=\small},
+        lifeline/.style={dashed},
+        message/.style={->, thick},
+        arrow/.style={->, thick}
+    ]
+
+    % 标题
+    \node[text centered] at (6, 8.5) {\Large \textbf{系统交互时序图}};
+
+    % 参与者
+    \node[participant, fill=cyan!20] (user) at (1, 7.5) {用户};
+    \node[participant, fill=green!20] (frontend) at (3, 7.5) {前端};
+    \node[participant, fill=yellow!20] (api) at (5, 7.5) {API};
+    \node[participant, fill=orange!20] (backend) at (7, 7.5) {后端};
+    \node[participant, fill=red!20] (gpu) at (9, 7.5) {GPU};
+
+    % 生命线
+    \draw[lifeline] (1, 7) -- (1, 0.5);
+    \draw[lifeline] (3, 7) -- (3, 0.5);
+    \draw[lifeline] (5, 7) -- (5, 0.5);
+    \draw[lifeline] (7, 7) -- (7, 0.5);
+    \draw[lifeline] (9, 7) -- (9, 0.5);
+
+    % 交互步骤
+    \draw[message] (1, 6.5) -- (3, 6.3) node[midway, above, font=\tiny] {1. 上传文件};
+    \draw[message] (3, 5.9) -- (5, 5.7) node[midway, above, font=\tiny] {2. 验证};
+    \draw[message] (5, 5.3) -- (7, 5.1) node[midway, above, font=\tiny] {3. 创建任务};
+    \draw[message] (5, 4.7) -- (3, 4.5) node[midway, above, font=\tiny] {4. 返回ID};
+
+    \draw[message] (7, 4.1) -- (9, 3.9) node[midway, above, font=\tiny] {5. 推理执行};
+
+    \draw[message, dashed] (3, 3.5) -- (5, 3.3) node[midway, above, font=\tiny] {6. 轮询进度};
+    \draw[message, dashed] (5, 2.9) -- (3, 2.7) node[midway, above, font=\tiny] {7. 返回进度};
+
+    \draw[message] (3, 2.3) -- (1, 2.1) node[midway, above, font=\tiny] {8. 更新UI};
+
+    \draw[message] (9, 1.7) -- (7, 1.5) node[midway, above, font=\tiny] {9. 推理完成};
+    \draw[message] (7, 1.1) -- (5, 0.9) node[midway, above, font=\tiny] {10. 返回结果};
+
+    \end{tikzpicture}
+    \caption{系统完整交互时序图}
+    \label{fig:system_sequence}
+\end{figure}
+
+% 结束图表定义

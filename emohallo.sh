@@ -194,6 +194,9 @@ FRONTEND_LOG="$SCRIPT_DIR/logs/frontend.log"
 # Start frontend with logging
 print_status "Starting Streamlit frontend..."
 
+# Disable Streamlit file monitoring to avoid inotify watch limit
+export STREAMLIT_SERVER_RUN_ON_SAVE=false
+
 $STREAMLIT_CMD run ./emo_hallo/Main.py \
     --browser.serverAddress="0.0.0.0" \
     --server.enableCORS=True \
