@@ -187,16 +187,23 @@ if pgrep -f "streamlit run" > /dev/null 2>&1; then
     sleep 2
 fi
 
-# Start frontend
+# Create logs directory if not exists
+mkdir -p "$SCRIPT_DIR/logs"
+FRONTEND_LOG="$SCRIPT_DIR/logs/frontend.log"
+
+# Start frontend with logging
 print_status "Starting Streamlit frontend..."
 
 $STREAMLIT_CMD run ./emo_hallo/Main.py \
     --browser.serverAddress="0.0.0.0" \
     --server.enableCORS=True \
-    --browser.gatherUsageStats=False &
+    --browser.gatherUsageStats=False \
+    --logger.level=info \
+    > "$FRONTEND_LOG" 2>&1 &
 
 FRONTEND_PID=$!
 print_status "Frontend started with PID: $FRONTEND_PID"
+print_status "Frontend logs: $FRONTEND_LOG"
 
 # Wait for both services
 print_status "Services running. Press Ctrl+C to stop."
