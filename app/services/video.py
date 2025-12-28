@@ -6,18 +6,37 @@ import gc
 import shutil
 from typing import List
 from loguru import logger
-from moviepy import (
-    AudioFileClip,
-    ColorClip,
-    CompositeAudioClip,
-    CompositeVideoClip,
-    ImageClip,
-    TextClip,
-    VideoFileClip,
-    afx,
-    concatenate_videoclips,
-)
-from moviepy.video.tools.subtitles import SubtitlesClip
+
+# MoviePy imports with fallback for different versions
+try:
+    from moviepy.editor import (
+        AudioFileClip,
+        ColorClip,
+        CompositeAudioClip,
+        CompositeVideoClip,
+        ImageClip,
+        TextClip,
+        VideoFileClip,
+        afx,
+        concatenate_videoclips,
+    )
+except ImportError:
+    from moviepy import (
+        AudioFileClip,
+        ColorClip,
+        CompositeAudioClip,
+        CompositeVideoClip,
+        ImageClip,
+        TextClip,
+        VideoFileClip,
+        afx,
+        concatenate_videoclips,
+    )
+
+try:
+    from moviepy.video.tools.subtitles import SubtitlesClip
+except ImportError:
+    from moviepy.editor import SubtitlesClip
 from PIL import ImageFont
 
 from app.models import const
