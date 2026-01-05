@@ -60,13 +60,15 @@ print_info() {
 cleanup() {
     print_warning "Shutting down all services..."
 
-    # Kill specific PIDs with SIGTERM first
+    # Kill backend process and all its children
     if [ ! -z "$BACKEND_PID" ]; then
         print_info "Stopping backend (PID: $BACKEND_PID)..."
-        kill -TERM $BACKEND_PID 2>/dev/null || true
+        # Kill process group to ensure all children are killed
+        kill -TERM -$BACKEND_PID 2>/dev/null || kill -TERM $BACKEND_PID 2>/dev/null || true
         wait $BACKEND_PID 2>/dev/null || true
     fi
 
+    # Kill frontend process
     if [ ! -z "$FRONTEND_PID" ]; then
         print_info "Stopping frontend (PID: $FRONTEND_PID)..."
         kill -TERM $FRONTEND_PID 2>/dev/null || true
@@ -76,20 +78,25 @@ cleanup() {
     # Give processes time to exit gracefully
     sleep 1
 
-    # Force kill any remaining uvicorn and streamlit processes
-    pkill -9 -f "uvicorn.*emo_hallo" 2>/dev/null || true
-    pkill -9 -f "streamlit run" 2>/dev/null || true
-
-    # Verify all processes are dead
+    # Kill any remaining processes by pattern - multiple attempts
+    # Target uvicorn backend
     if pgrep -f "uvicorn.*emo_hallo" > /dev/null 2>&1; then
-        print_warning "Forcing backend process termination..."
-        pkill -9 -f "uvicorn.*emo_hallo" 2>/dev/null || true
+        print_warning "Force killing remaining backend processes..."
+        pkill -9 -f "uvicorn" 2>/dev/null || true
+        sleep 0.5
+        pkill -9 -f "python.*emo_hallo" 2>/dev/null || true
     fi
 
+    # Target streamlit frontend
     if pgrep -f "streamlit run" > /dev/null 2>&1; then
-        print_warning "Forcing frontend process termination..."
-        pkill -9 -f "streamlit run" 2>/dev/null || true
+        print_warning "Force killing remaining frontend processes..."
+        pkill -9 -f "streamlit" 2>/dev/null || true
+        sleep 0.5
+        pkill -9 -f "_stream" 2>/dev/null || true
     fi
+
+    # Final verification - kill all remaining emo_hallo related processes
+    pkill -9 -f "emo_hallo" 2>/dev/null || true
 
     sleep 1
     print_status "All services stopped"
@@ -124,31 +131,7 @@ FRONTEND_LOG="$SCRIPT_DIR/logs/frontend.log"
 UVICORN_LOG_LEVEL=$(echo "$LOG_LEVEL" | tr '[:upper:]' '[:lower:]')
 STREAMLIT_LOG_LEVEL=$(echo "$LOG_LEVEL" | tr '[:upper:]' '[:lower:]')
 
-# Check if backend is already running
-if lsof -Pi :$BACKEND_PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
-    print_warning "Backend already running on port $BACKEND_PORT, skipping..."
-    BACKEND_PID=$(lsof -t -i :$BACKEND_PORT)
-else
-    # Start backend service
-    print_status "Starting Hallo2 backend service..."
-
-    # 确保 LOG_LEVEL 被正确传递到子进程
-    export LOG_LEVEL="$LOG_LEVEL"
-
-
-    # Launch backend in background with unbuffered output
-    (PYTHONUNBUFFERED=1 stdbuf -oL -eL $PYTHON_CMD -u -m uvicorn emo_hallo.backend.app:app \
-        --host "0.0.0.0" \
-        --port "$BACKEND_PORT" \
-        --log-level "$UVICORN_LOG_LEVEL" \
-        >> "$BACKEND_LOG" 2>&1) &
-
-    BACKEND_PID=$!
-    print_status "Backend PID: $BACKEND_PID"
-    print_info "Backend logs: $BACKEND_LOG"
-fi
-
-# Set backend URL environment variable for frontend (在前端启动前设置)
+# Set backend URL environment variable for frontend
 export BACKEND_URL="$BACKEND_URL"
 
 # Kill any existing Streamlit processes to prevent port conflicts
@@ -158,7 +141,7 @@ if pgrep -f "streamlit run" > /dev/null 2>&1; then
     sleep 2
 fi
 
-# Start frontend with logging
+# ========== Start Frontend First ==========
 print_status "Starting Streamlit frontend service..."
 
 # Configure Streamlit via environment variables
@@ -181,6 +164,30 @@ bash -c '
 FRONTEND_PID=$!
 print_status "Frontend PID: $FRONTEND_PID"
 print_info "Frontend logs: $FRONTEND_LOG"
+
+# ========== Start Backend Second ==========
+# Check if backend is already running
+if lsof -Pi :$BACKEND_PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
+    print_warning "Backend already running on port $BACKEND_PORT, skipping..."
+    BACKEND_PID=$(lsof -t -i :$BACKEND_PORT)
+else
+    # Start backend service
+    print_status "Starting Hallo2 backend service..."
+
+    # 确保 LOG_LEVEL 被正确传递到子进程
+    export LOG_LEVEL="$LOG_LEVEL"
+
+    # Launch backend in background with unbuffered output
+    PYTHONUNBUFFERED=1 stdbuf -oL -eL $PYTHON_CMD -u -m uvicorn emo_hallo.backend.app:app \
+        --host "0.0.0.0" \
+        --port "$BACKEND_PORT" \
+        --log-level "$UVICORN_LOG_LEVEL" \
+        >> "$BACKEND_LOG" 2>&1 &
+
+    BACKEND_PID=$!
+    print_status "Backend PID: $BACKEND_PID"
+    print_info "Backend logs: $BACKEND_LOG"
+fi
 
 # ========== 后台启动健康检查 ==========
 # 在后台监控后端就绪状态（不阻塞前端启动）
