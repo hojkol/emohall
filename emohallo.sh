@@ -152,14 +152,10 @@ export STREAMLIT_SERVER_MAX_UPLOAD_SIZE=500
 export STREAMLIT_BROWSER_SERVER_ADDRESS="0.0.0.0"
 export STREAMLIT_SERVER_ENABLE_CORS=true
 
-# Start Streamlit in subprocess with clean HOME
-bash -c '
-  export HOME=$(mktemp -d -p /tmp)
-  '"$STREAMLIT_CMD"' run ./emo_hallo/Main.py \
-    --logger.level='"$STREAMLIT_LOG_LEVEL"' \
-    --client.toolbarMode=minimal > '"$FRONTEND_LOG"' 2>&1
-  rm -rf $HOME
-' &
+# Start Streamlit directly (no bash wrapper to avoid log issues)
+$STREAMLIT_CMD run ./emo_hallo/Main.py \
+    --logger.level="$STREAMLIT_LOG_LEVEL" \
+    --client.toolbarMode=minimal >> "$FRONTEND_LOG" 2>&1 &
 
 FRONTEND_PID=$!
 print_status "Frontend PID: $FRONTEND_PID"
