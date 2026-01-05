@@ -60,43 +60,48 @@ print_info() {
 cleanup() {
     print_warning "Shutting down all services..."
 
-    # Kill backend process and all its children
+    # Force kill by specific PID first (more reliable)
     if [ ! -z "$BACKEND_PID" ]; then
-        print_info "Stopping backend (PID: $BACKEND_PID)..."
-        # Kill process group to ensure all children are killed
-        kill -TERM -$BACKEND_PID 2>/dev/null || kill -TERM $BACKEND_PID 2>/dev/null || true
-        wait $BACKEND_PID 2>/dev/null || true
+        print_info "Force killing backend (PID: $BACKEND_PID)..."
+        kill -9 "$BACKEND_PID" 2>/dev/null || true
     fi
 
-    # Kill frontend process
     if [ ! -z "$FRONTEND_PID" ]; then
-        print_info "Stopping frontend (PID: $FRONTEND_PID)..."
-        kill -TERM $FRONTEND_PID 2>/dev/null || true
-        wait $FRONTEND_PID 2>/dev/null || true
+        print_info "Force killing frontend (PID: $FRONTEND_PID)..."
+        kill -9 "$FRONTEND_PID" 2>/dev/null || true
     fi
 
-    # Give processes time to exit gracefully
-    sleep 1
+    # Kill all matching processes by command pattern
+    print_warning "Killing all remaining Emo Hallo processes..."
 
-    # Kill any remaining processes by pattern - multiple attempts
-    # Target uvicorn backend
-    if pgrep -f "uvicorn.*emo_hallo" > /dev/null 2>&1; then
-        print_warning "Force killing remaining backend processes..."
-        pkill -9 -f "uvicorn" 2>/dev/null || true
-        sleep 0.5
-        pkill -9 -f "python.*emo_hallo" 2>/dev/null || true
-    fi
+    # Kill uvicorn (backend) - match by module name
+    pkill -9 -f "emo_hallo.backend" 2>/dev/null || true
+    pkill -9 -f "uvicorn.*8001" 2>/dev/null || true
+    pkill -9 -f -- "-m uvicorn" 2>/dev/null || true
 
-    # Target streamlit frontend
-    if pgrep -f "streamlit run" > /dev/null 2>&1; then
-        print_warning "Force killing remaining frontend processes..."
-        pkill -9 -f "streamlit" 2>/dev/null || true
-        sleep 0.5
-        pkill -9 -f "_stream" 2>/dev/null || true
-    fi
+    # Kill streamlit (frontend) - match by app
+    pkill -9 -f "emo_hallo/Main.py" 2>/dev/null || true
+    pkill -9 -f "streamlit" 2>/dev/null || true
 
-    # Final verification - kill all remaining emo_hallo related processes
+    # Kill any remaining python processes related to emo_hallo
     pkill -9 -f "emo_hallo" 2>/dev/null || true
+
+    # Final catch-all: check and kill any remaining processes on specific ports
+    if lsof -Pi :8001 -sTCP:LISTEN -t >/dev/null 2>&1; then
+        print_warning "Port 8001 still in use, force killing..."
+        PIDS=$(lsof -t -i :8001 2>/dev/null)
+        if [ ! -z "$PIDS" ]; then
+            echo "$PIDS" | xargs kill -9 2>/dev/null || true
+        fi
+    fi
+
+    if lsof -Pi :8501 -sTCP:LISTEN -t >/dev/null 2>&1; then
+        print_warning "Port 8501 still in use, force killing..."
+        PIDS=$(lsof -t -i :8501 2>/dev/null)
+        if [ ! -z "$PIDS" ]; then
+            echo "$PIDS" | xargs kill -9 2>/dev/null || true
+        fi
+    fi
 
     sleep 1
     print_status "All services stopped"
