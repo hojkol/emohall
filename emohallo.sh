@@ -154,11 +154,12 @@ export STREAMLIT_SERVER_RUN_ON_SAVE=false
 export STREAMLIT_SERVER_HEADLESS=true
 export STREAMLIT_LOGGER_LEVEL="$STREAMLIT_LOG_LEVEL"
 export STREAMLIT_SERVER_MAX_UPLOAD_SIZE=500
-export STREAMLIT_BROWSER_SERVER_ADDRESS="0.0.0.0"
 export STREAMLIT_SERVER_ENABLE_CORS=true
 
 # Start Streamlit directly (no bash wrapper to avoid log issues)
 $STREAMLIT_CMD run ./emo_hallo/Main.py \
+    --server.port=8501 \
+    --server.address=0.0.0.0 \
     --logger.level="$STREAMLIT_LOG_LEVEL" \
     --client.toolbarMode=minimal >> "$FRONTEND_LOG" 2>&1 &
 
@@ -232,8 +233,12 @@ echo ""
 print_status "========================================="
 print_status "✅ Both services are running!"
 print_status "========================================="
-print_info "Frontend URL:  http://0.0.0.0:8501"
+print_info "Frontend URL:  http://localhost:8501"
 print_info "Backend URL:   http://127.0.0.1:$BACKEND_PORT"
+print_info ""
+print_info "Or access with your server IP:"
+print_info "  Frontend: http://<your-server-ip>:8501"
+print_info "  Backend:  http://<your-server-ip>:$BACKEND_PORT"
 print_info ""
 print_info "View logs (in another terminal):"
 print_info "  • Backend:  tail -f logs/backend.log"
@@ -241,7 +246,6 @@ print_info "  • Frontend: tail -f logs/frontend.log"
 print_info ""
 print_info "To change log level, use environment variable:"
 print_info "  LOG_LEVEL=DEBUG bash emohallo.sh"
-print_info "  EMO_HALLO_LOG_LEVEL=DEBUG bash emohallo.sh"
 print_info ""
 print_info "Press Ctrl+C to stop all services"
 print_status "========================================="
