@@ -1,13 +1,10 @@
 # MoviePy imports with fallback for different versions
-try:
-    from moviepy.editor import Clip, vfx
-except ImportError:
-    try:
-        from moviepy import Clip, vfx
-    except ImportError:
-        # Fallback for older versions
-        from moviepy.video.VideoClip import Clip
-        from moviepy import vfx
+# Note: In MoviePy 1.0.3, Clip base class is not exported directly
+from typing import Any
+from moviepy.editor import vfx
+
+# Use Any for Clip type since MoviePy doesn't export the base Clip class
+Clip = Any
 
 
 # FadeIn

@@ -30,6 +30,9 @@
 %   5. 不需要的注释可以尽情删除
 %*********************************************************************
 
+% Ensure named colors and color mixes (e.g., `cyan!30`) work reliably with TikZ on Overleaf.
+\PassOptionsToPackage{dvipsnames,svgnames,x11names}{xcolor}
+
 \documentclass[type=master]{fduthesis}
 % 模板选项：
 %   type = doctor|master|bachelor  论文类型，默认为本科论文
@@ -236,11 +239,14 @@
 
 % 需要的宏包可以自行调用
 \usepackage{physics}
-\usepackage[utf8]{inputenc}
 \usepackage{ctex}  % 中文支持
+\usepackage{xcolor}
 \usepackage{tikz}
 \usepackage{float} % 支持 [H] 选项
 \usetikzlibrary{shapes,arrows,positioning,calc,shapes.geometric,chains}  % TikZ 必需库
+\definecolor{cyan}{RGB}{0,255,255}
+\definecolor{orange}{RGB}{255,165,0}
+\definecolor{purple}{RGB}{128,0,128}
 
 % 需要的命令可以自行定义
 \newcommand{\hilbertH}{\symcal{H}}
@@ -302,7 +308,8 @@
 
 \include{chapter3_model}
 
-\include{chapter4_system}
+\include{chapter4_design}
+\include{chapter5_implementation}
 
 
 \chapter{数字人虚假数据集}

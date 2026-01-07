@@ -1,0 +1,46 @@
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[
+        scale=0.9,
+        node distance=0.5cm,
+        auto,
+        ui_box/.style={rectangle, draw, thick, minimum width=6cm, minimum height=0.8cm,
+                       text centered, font=\small},
+        section/.style={rectangle, draw=thick, minimum width=5.8cm, minimum height=0.7cm,
+                        text centered, font=\tiny, fill=blue!10}
+    ]
+
+    % 标题
+    \node[text centered] at (3.5, 9) {\Large \textbf{Streamlit 前端 UI 布局}};
+
+    % 页面框
+    \draw[thick] (0.2, 8.2) rectangle (6.8, -0.5);
+
+    % 标题栏
+    \node[ui_box, fill=cyan!30] at (3.5, 7.5) {数字人视频生成系统};
+
+    % 文件上传区
+    \node[section, fill=green!20] at (3.5, 6.8) {\textbf{📁 文件上传区}};
+    \node[section] at (3.5, 6.1) {$\square$ 上传人物图像 (JPG/PNG)};
+    \node[section] at (3.5, 5.5) {$\square$ 上传音频文件 (WAV/MP3)};
+
+    % 参数配置区
+    \node[section, fill=orange!20] at (3.5, 4.9) {\textbf{⚙️ 参数配置区}};
+    \node[section] at (3.5, 4.2) {$\bullet$ 分辨率: $\square$ | 帧率: $\square$ | 长度: $\square$};
+    \node[section] at (3.5, 3.6) {$\bullet$ 精度: ◉ float32 ○ float16 | $\square$ 启用缓存};
+
+    % 提交和进度
+    \node[section, fill=yellow!20] at (3.5, 3) {\textbf{▶️ 任务提交}};
+    \node[section] at (3.5, 2.4) {$[~~\text{生成视频}~~]$ 进度: [=====>---] 65\%};
+
+    % 结果展示
+    \node[section, fill=red!20] at (3.5, 1.8) {\textbf{🎬 结果展示}};
+    \node[section] at (3.5, 1.2) {$[~~\text{📥 下载视频}~~]$ 状态: 生成完成};
+
+    % 任务历史
+    \node[section, fill=purple!20] at (3.5, 0.6) {\textbf{📋 任务历史}};
+
+    \end{tikzpicture}
+    \caption{Streamlit 前端用户界面布局}
+    \label{fig:frontend_ui_layout}
+\end{figure}

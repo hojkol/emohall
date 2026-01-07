@@ -22,6 +22,11 @@ BACKEND_URL="http://$BACKEND_HOST:$BACKEND_PORT"
 HEALTH_CHECK_RETRIES=${EMO_HALLO_HEALTH_CHECK_RETRIES:-20}  # 最多120次重试 = 10分钟
 HEALTH_CHECK_INTERVAL=${EMO_HALLO_HEALTH_CHECK_INTERVAL:-60}  # 每5秒检查一次
 
+# Frontend listen address configuration
+# 默认为 0.0.0.0 (允许远程访问)
+# 如果需要仅本地访问，设置为 127.0.0.1
+FRONTEND_LISTEN_ADDRESS=${EMO_HALLO_LISTEN_ADDRESS:-0.0.0.0}
+
 # Python environment configuration
 PYTHON_ENV_PATH=${EMO_HALLO_ENV:-/remote-home/JJHe/.conda/envs/mpt}
 
@@ -60,7 +65,13 @@ print_info() {
 cleanup() {
     print_warning "Shutting down all services..."
 
-    # Force kill by specific PID first (more reliable)
+    # Kill health check process first
+    if [ ! -z "$HEALTH_CHECK_PID" ] && ps -p "$HEALTH_CHECK_PID" > /dev/null 2>&1; then
+        print_info "Stopping health check (PID: $HEALTH_CHECK_PID)..."
+        kill -9 "$HEALTH_CHECK_PID" 2>/dev/null || true
+    fi
+
+    # Force kill by specific PID (more reliable)
     if [ ! -z "$BACKEND_PID" ]; then
         print_info "Force killing backend (PID: $BACKEND_PID)..."
         kill -9 "$BACKEND_PID" 2>/dev/null || true
@@ -108,6 +119,9 @@ cleanup() {
     exit 0
 }
 
+# Variable to track health check process
+HEALTH_CHECK_PID=""
+
 # Set up signal handlers
 trap cleanup SIGINT SIGTERM EXIT
 
@@ -142,26 +156,48 @@ export BACKEND_URL="$BACKEND_URL"
 # Kill any existing Streamlit processes to prevent port conflicts
 if pgrep -f "streamlit run" > /dev/null 2>&1; then
     print_warning "Stopping existing Streamlit instances..."
-    pkill -f "streamlit run" 2>/dev/null || true
-    sleep 2
+    pkill -9 -f "streamlit run" 2>/dev/null || true
+    sleep 3
+fi
+
+# Double-check port 8501 is free
+if lsof -Pi :8501 -sTCP:LISTEN -t >/dev/null 2>&1; then
+    print_warning "Port 8501 still in use, force killing..."
+    PIDS=$(lsof -t -i :8501 2>/dev/null)
+    if [ ! -z "$PIDS" ]; then
+        echo "$PIDS" | xargs kill -9 2>/dev/null || true
+        sleep 2
+    fi
 fi
 
 # ========== Start Frontend First ==========
 print_status "Starting Streamlit frontend service..."
 
-# Configure Streamlit via environment variables
+# Configure Streamlit via environment variables to disable file watching
 export STREAMLIT_SERVER_RUN_ON_SAVE=false
 export STREAMLIT_SERVER_HEADLESS=true
-export STREAMLIT_LOGGER_LEVEL="$STREAMLIT_LOG_LEVEL"
+export STREAMLIT_LOGGER_LEVEL=error
+export STREAMLIT_CLIENT_SHOW_ERROR_DETAILS=true
 export STREAMLIT_SERVER_MAX_UPLOAD_SIZE=500
+export STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=true
+export STREAMLIT_BROWSER_SERVER_ADDRESS="0.0.0.0"
+export STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 export STREAMLIT_SERVER_ENABLE_CORS=true
 
-# Start Streamlit directly (no bash wrapper to avoid log issues)
-$STREAMLIT_CMD run ./emo_hallo/Main.py \
+# CRITICAL: Force watchdog to use polling instead of inotify
+# This avoids "inotify watch limit reached" errors when Streamlit tries to watch files
+export USE_POLLING_OBSERVER=true
+
+# Start Streamlit in subprocess with clean HOME and polling
+bash -c '
+  export HOME=$(mktemp -d -p /tmp)
+  export USE_POLLING_OBSERVER=true
+  '"$STREAMLIT_CMD"' run ./emo_hallo/Main.py \
     --server.port=8501 \
-    --server.address=0.0.0.0 \
-    --logger.level="$STREAMLIT_LOG_LEVEL" \
-    --client.toolbarMode=minimal >> "$FRONTEND_LOG" 2>&1 &
+    --logger.level=error \
+    --client.toolbarMode=minimal > '"$FRONTEND_LOG"' 2>&1
+  rm -rf $HOME
+' &
 
 FRONTEND_PID=$!
 print_status "Frontend PID: $FRONTEND_PID"
@@ -228,39 +264,67 @@ fi
     fi
 ) &
 
+# Capture health check process PID so we can kill it on cleanup
+HEALTH_CHECK_PID=$!
+
+# 自动初始化前端页面（触发Streamlit脚本执行）
+print_info "Initializing frontend..."
+(
+    sleep 5  # 等待Streamlit完全启动
+    for i in {1..10}; do
+        if curl -s "http://localhost:8501" > /dev/null 2>&1; then
+            print_info "✓ Frontend initialized successfully"
+            break
+        fi
+        if [ $i -eq 10 ]; then
+            print_warning "⚠️ Frontend initialization timeout (may still be loading)"
+        fi
+        sleep 2
+    done
+) &
+
 # Print summary (前端启动后立即显示)
 echo ""
+echo ""
 print_status "========================================="
-print_status "✅ Both services are starting!"
+print_status "✅ Emo Hallo Services Started Successfully!"
 print_status "========================================="
-print_info "Frontend URL:  http://localhost:8501"
-print_info "Backend URL:   http://127.0.0.1:$BACKEND_PORT"
+echo ""
+print_status "📱 FRONTEND - How to Access:"
+if [ "$FRONTEND_LISTEN_ADDRESS" = "127.0.0.1" ]; then
+    print_info "   Local access only (default configuration):"
+    print_info ""
+    print_info "   ✓ http://localhost:8501"
+    print_info "   ✓ http://127.0.0.1:8501"
+    print_info ""
+    print_info "   For remote access from other machines:"
+    print_info "   EMO_HALLO_LISTEN_ADDRESS=0.0.0.0 bash emohallo.sh"
+else
+    print_info "   Accessible from any machine:"
+    print_info ""
+    print_info "   ✓ Local:            http://localhost:8501"
+    print_info "   ✓ From other PCs:   http://<your-server-ip>:8501"
+    print_info ""
+fi
 print_info ""
-print_warning "⏳ IMPORTANT:"
-print_warning "  Backend is loading Hallo2 model in background"
-print_warning "  This takes 5-10 minutes on first run"
-print_warning "  Monitor progress:"
-print_warning "    tail -f logs/backend.log"
+print_status "⚙️  BACKEND - API Server:"
+print_info "   http://127.0.0.1:$BACKEND_PORT"
+print_info ""
+print_warning "⏳ IMPORTANT - Backend Status:"
+print_warning "   Backend is loading Hallo2 model in background"
+print_warning "   Time: 5-10 minutes on first run"
 print_warning ""
-print_info "Or access with your server IP:"
-print_info "  Frontend: http://<your-server-ip>:8501"
-print_info "  Backend:  http://<your-server-ip>:$BACKEND_PORT"
+print_warning "   Check progress with:"
+print_warning "   tail -f logs/backend.log"
 print_info ""
-print_info "View logs (in another terminal):"
-print_info "  • Backend:  tail -f logs/backend.log"
-print_info "  • Frontend: tail -f logs/frontend.log"
+print_info "📋 View Service Logs (in another terminal):"
+print_info "   • Backend:  tail -f logs/backend.log"
+print_info "   • Frontend: tail -f logs/frontend.log"
 print_info ""
-print_info "Backend startup stages:"
-print_info "  1. Starting uvicorn server (2-3s)"
-print_info "  2. Registering routers (1-2s)"
-print_info "  3. Loading Hallo2 model (5-10min) ← Currently here"
+print_info "🔧 Configuration:"
+print_info "   Change log level: LOG_LEVEL=DEBUG bash emohallo.sh"
 print_info ""
-print_info "You can use the frontend while backend loads!"
-print_info ""
-print_info "To change log level, use environment variable:"
-print_info "  LOG_LEVEL=DEBUG bash emohallo.sh"
-print_info ""
-print_info "Press Ctrl+C to stop all services"
+print_info "⛔ Stop all services: Press Ctrl+C"
 print_status "========================================="
 echo ""
 

@@ -1,0 +1,1225 @@
+\chapter{数字人视频生成系统设计}
+
+本章围绕基于 Hallo2 模型的数字人视频生成系统给出需求分析与总体设计方案。系统采用分层 C/S 架构，将前端交互与后端深度学习推理解耦，并通过异步任务与并发控制提升整体吞吐与稳定性。
+
+\section{应用背景与需求分析}
+
+\subsection{应用背景}
+
+近年来，虚拟主播/数字人技术在直播电商、在线教育、客户服务、企业培训等场景展现出广阔的应用潜力，逐渐成为提升用户体验、降低内容生产成本的重要工具。与传统视频生产流程相比，基于生成式模型的数字人视频生成能够在较低人力投入下实现可规模化的内容生产与快速迭代。然而，在“身份一致性（Identity Preservation）”“口型与语音同步（Lip-Sync）”“时序连贯性（Temporal Consistency）”等方面仍面临挑战，亟需在模型能力与系统工程化之间取得平衡。
+
+\subsubsection{传统视频制作的局限性}
+
+传统视频拍摄与制作通常存在以下局限：
+
+\begin{itemize}
+    \item \textbf{制作成本高}：需要摄影、录音设备与后期团队投入，整体费用较高。
+    \item \textbf{制作周期长}：从策划、拍摄到剪辑发布通常耗时数周至数月。
+    \item \textbf{对人员依赖强}：演员档期与现场协作受限，变更成本高。
+    \item \textbf{复用率偏低}：不同主题往往需要重新拍摄，素材难以灵活复用。
+    \item \textbf{质量波动}：受天气、设备与人员状态影响，难以保证一致性。
+    \item \textbf{跨地域受限}：跨时区与异地协作成本高，协调困难。
+\end{itemize}
+
+\subsubsection{虚拟主播/数字人技术的优势}
+
+与传统视频制作相比，虚拟主播/数字人技术具有以下显著优势：
+
+\begin{itemize}
+    \item \textbf{成本更低}：一次采集人物图像与音频后可重复生成内容，边际成本显著降低。
+    \item \textbf{生成更快}：借助深度学习模型实现快速生成与批量生产。
+    \item \textbf{可控性更强}：便于更换形象与调整参数，快速适配业务需求。
+    \item \textbf{全天候可用}：支持 24/7 服务与内容输出。
+    \item \textbf{质量更一致}：生成过程可复现，输出质量相对稳定。
+    \item \textbf{更易本地化}：便于适配多语言与不同文化语境的内容表达。
+\end{itemize}
+
+\subsubsection{核心应用场景}
+
+虚拟主播技术在以下领域具有显著的应用价值：
+
+\begin{itemize}
+    \item \textbf{直播电商}：实时生成带货直播，克服场景限制和时间约束
+    \item \textbf{在线教育}：生成教学视频，支持多个讲师的课程快速录制
+    \item \textbf{客户服务}：生成虚拟客服，提供 24/7 的多语言支持
+    \item \textbf{企业宣传}：快速生成企业宣传视频、产品演示视频
+    \item \textbf{内容创作}：为内容创作者提供虚拟形象，降低创作门槛
+    \item \textbf{国际化运营}：快速适配不同国家和地区的内容需求
+\end{itemize}
+
+\subsubsection{相关研究工作}
+
+在虚拟主播/数字人生成领域，扩散模型（Diffusion Models）为高保真生成提供了新的技术范式。相较于 GAN，扩散模型通常具备更稳定的训练过程与更强的细节表达能力，适用于对面部纹理、口型变化等细粒度视觉信息要求较高的数字人视频生成任务。围绕音频驱动的人脸动画，研究者进一步探索了音频条件注入、空间局部约束以及时序建模等关键问题，以提升音视频同步性与跨帧一致性。
+
+Hallo2 模型可视为上述研究路线的代表之一，其核心思想是在扩散式视频生成框架中引入“参考图像条件 + 音频驱动运动”的联合建模：一方面，模型通过参考图像分支对身份与外观风格进行编码，从而在生成过程中保持人物身份的一致性；另一方面，模型将音频特征映射为运动驱动信号，引导时序去噪网络生成与语音节奏一致的口型与表情变化。同时，通过人脸定位与局部约束机制，模型在保证时序连贯性的同时，降低非目标区域的无效变化，从而提升面部区域的稳定性与可控性。
+
+基于上述特点，本文选取 Hallo2 作为核心推理模型，并在其推理管道之上构建面向应用的系统化实现：通过分层架构与异步任务机制，将交互层与 GPU 推理解耦；通过并发控制与资源治理策略，降低显存冲突与长时运行的不确定性；最终使数字人视频生成能够以可复现、可扩展的方式服务于实际业务场景。
+
+\subsection{需求分析}
+
+\subsubsection{功能需求}
+
+系统在应用侧需满足多媒体输入、参数化生成、可扩展模型管理以及可用性交互等要求，核心功能需求如下：
+
+\begin{enumerate}
+    \item \textbf{多媒体输入处理}
+    \begin{itemize}
+        \item 系统应支持上传人物静态图像文件（JPG、PNG 格式）
+        \item 系统应支持上传音频文件（WAV、MP3、M4A 等常见格式）
+        \item 系统应完成文件格式校验与内容有效性检查
+        \item 系统应提供基础的图像裁剪与尺寸调整能力
+    \end{itemize}
+
+    \item \textbf{视频生成与参数控制}
+    \begin{itemize}
+        \item 系统应生成音视频同步的数字人视频结果
+        \item 系统应支持输出分辨率等参数配置（如 512×512 px、768×768 px、1024×1024 px）
+        \item 系统应支持帧率（FPS）配置（如 20、25、30）
+        \item 系统应支持输出视频长度配置
+        \item 系统应支持多种计算精度选项（float32、float16、bfloat16），以在质量与效率间权衡
+    \end{itemize}
+
+    \item \textbf{灵活的模型扩展}
+    \begin{itemize}
+        \item 系统应采用插件式架构支持多模型注册与切换
+        \item 系统应支持模型的动态加载与卸载，以降低显存常驻开销
+        \item 系统应支持推理侧关键参数的可配置化
+        \item 系统应为后续接入新模型预留扩展接口
+    \end{itemize}
+
+    \item \textbf{用户交互和反馈}
+    \begin{itemize}
+        \item 系统应提供可用性良好的 Web 交互界面
+        \item 系统应提供任务进度可视化与状态反馈（0--100\%）
+        \item 系统应提供可解释的错误提示与必要的诊断信息
+        \item 系统应支持任务管理（历史查询、取消、重试等）
+        \item 系统应支持生成结果的预览与下载
+    \end{itemize}
+
+    \item \textbf{国际化与多语言}
+    \begin{itemize}
+        \item 系统应支持中英文界面切换
+        \item 系统应为扩展更多语种预留统一的文本与配置管理机制
+    \end{itemize}
+
+    \item \textbf{API接口服务}
+    \begin{itemize}
+        \item 系统应提供 RESTful API 以支持第三方系统集成
+        \item 系统应支持异步任务提交、状态查询与结果获取
+        \item 系统应采用自动化接口文档生成机制（Swagger/ReDoc），以提高接口可用性与对接效率
+    \end{itemize}
+\end{enumerate}
+
+\subsubsection{性能需求}
+
+系统的性能需求主要包括以下方面：
+
+\begin{enumerate}
+    \item \textbf{生成效率}
+    \begin{itemize}
+        \item 单任务推理耗时：以 NVIDIA RTX 4090 为例，生成 5 秒视频耗时约 15--30 秒
+        \item API 响应时间：任务提交接口响应时间 $<$ 500 ms
+        \item 任务启动延迟：任务从提交到开始执行的延迟 $<$ 2 秒
+        \item 前端进度更新延迟：$<$ 1 秒（每秒轮询一次）
+    \end{itemize}
+
+    \item \textbf{并发处理能力}
+    \begin{itemize}
+        \item 系统应支持多个 API 请求并发接入（基于异步服务框架实现）
+        \item 推理侧受 GPU 显存与算力资源限制，在单 GPU 配置下默认采取单任务串行执行，以避免显存冲突
+        \item 系统应支持可配置的并发上限，以便依据硬件条件调整同时执行的推理任务数
+        \item 待执行任务应进入队列等待，并在资源释放后按调度策略获取执行机会
+    \end{itemize}
+
+    \item \textbf{资源占用指标}
+    \begin{itemize}
+        \item GPU 显存占用：约 6--12 GB（与精度设置、输出分辨率等相关）
+        \item CPU 内存占用：约 2--4 GB
+        \item 单任务磁盘占用：约 200--500 MB（包含输入、中间结果与输出）
+        \item 启动时间：服务启动到就绪约 10--20 秒（与模型预加载策略相关）
+    \end{itemize}
+
+    \item \textbf{系统可用性}
+    \begin{itemize}
+        \item 正常运行时间比例（可用性）$\geq$ 99\%
+        \item 支持 24/7 持续运行
+        \item 任务失败自动恢复机制
+        \item 最大任务执行时间限制：600 秒（防止任务无限占用资源）
+    \end{itemize}
+
+    \item \textbf{可扩展性}
+    \begin{itemize}
+        \item 支持多GPU环境（GPU ID配置）
+        \item 支持后期扩展为分布式部署
+        \item 模型可独立更新，无需重启服务
+    \end{itemize}
+\end{enumerate}
+
+为增强论文的可复现性与评测的可比性，性能评估应明确给出测试环境配置与评价指标。测试环境建议至少包含 GPU 型号与显存容量、CUDA 版本、PyTorch 版本等关键信息；评价指标可从效率、资源与质量三个维度展开，包括平均生成耗时、吞吐量（任务/分钟）、显存峰值占用，以及视频质量相关指标（如 FID）与口型同步相关指标（如基于 SyncNet 的同步得分）。在此基础上，可选取同类系统或模型作为基线进行对比，形成定量化的综合评估结果，如表~\ref{tab:benchmark_placeholder}所示。
+
+\begin{table}[htbp]
+    \centering
+    \caption{数字人视频生成性能与质量评测指标示例（结果可在实验章节给出）}
+    \label{tab:benchmark_placeholder}
+    \begin{tabular}{lcccc}
+        \hline
+        模型/系统 & 平均生成耗时（s） & 显存峰值（GB） & 质量指标（FID$\downarrow$） & 同步指标（LipSync$\uparrow$） \\
+        \hline
+        Hallo2（本文系统） & -- & -- & -- & -- \\
+        基线方法 A & -- & -- & -- & -- \\
+        基线方法 B & -- & -- & -- & -- \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\subsubsection{可靠性需求}
+
+系统的可靠性需求确保在各种异常情况下能稳定运行：
+
+\begin{enumerate}
+    \item \textbf{错误处理和恢复}
+    \begin{itemize}
+        \item 所有异常必须被捕获处理，不得导致服务崩溃
+        \item 任务执行失败时自动记录错误信息、错误堆栈和执行日志
+        \item 失败任务保存错误信息，允许用户调整参数后重新提交
+        \item 模型加载失败时自动卸载资源，保持系统稳定
+    \end{itemize}
+
+    \item \textbf{显存管理和溢出防护}
+    \begin{itemize}
+        \item 实现显存溢出（OOM）防护机制，防止 GPU 显存耗尽导致任务失败
+        \item 定期清理GPU缓存（torch.cuda.empty\_cache()）
+        \item 限制并发任务数，防止多个任务同时占用过多显存
+        \item 支持多精度选择（float32/float16），降低显存占用
+    \end{itemize}
+
+    \item \textbf{日志记录和追踪}
+    \begin{itemize}
+        \item 详细记录所有API请求和系统事件
+        \item 记录任务完整执行过程，包括各个处理阶段的时间和状态
+        \item 记录错误堆栈和异常信息，便于事后诊断
+        \item 提供日志查询接口，用户可获取任务的详细执行日志
+    \end{itemize}
+
+    \item \textbf{资源清理和优雅关闭}
+    \begin{itemize}
+        \item 任务完成后及时释放 GPU 显存和临时文件
+        \item 服务停止时优雅关闭，等待正在执行的任务完成
+        \item 长期运行时定期进行资源清理，防止内存泄漏
+    \end{itemize}
+
+    \item \textbf{健康检查和监控}
+    \begin{itemize}
+        \item 提供健康检查端点，支持实时检查GPU可用性和模型加载状态
+        \item 启动脚本自动进行健康检查，验证服务就绪
+        \item 支持监控系统性能指标（GPU占用率、内存占用等）
+    \end{itemize}
+
+    \item \textbf{容错能力}
+    \begin{itemize}
+        \item 支持任务取消：用户可随时取消未完成的任务
+        \item 支持任务超时控制：防止任务无限期占用资源
+        \item 支持文件隔离：每个任务的文件在独立的目录中，相互不影响
+    \end{itemize}
+\end{enumerate}
+
+除机制设计外，可靠性需求还应通过验证策略加以支撑。本文在系统验证阶段可采用“压力测试 + 异常注入”的组合方法：在压力测试中逐步提升请求并发与任务队列长度，观察系统的吞吐、延迟抖动以及资源占用变化；在异常注入中模拟输入文件损坏、模型加载失败、显存不足（OOM）、磁盘写入异常及服务重启等场景，检查系统能否保持服务存活、任务状态可追踪以及资源可回收。上述验证有助于将可靠性要求落到可观测、可复现的实验过程之中。
+
+本节围绕应用背景与需求分析明确了系统的使用场景、关键挑战以及在功能、性能与可靠性方面的目标约束，为后续的系统总体架构设计与模块实现提供了需求依据与评价标准。
+
+\section{系统设计}
+
+\subsection{系统架构}
+
+本系统的体系结构设计采用 \textbf{分层 C/S（Client--Server）架构}。该设计旨在将前端交互、接口处理、业务调度与模型推理解耦，以形成清晰的职责边界与可扩展的系统组织形式。根据功能边界与数据流向，系统整体可抽象为五层，如图~\ref{fig:system_architecture_layers}所示：
+
+\begin{description}
+    \item[展示层（Presentation Layer）] 面向用户的交互界面，负责文件上传、参数配置与结果展示。
+    \item[API 层（API Layer）] 提供 RESTful 接口，完成请求路由、参数校验与响应封装。
+    \item[服务层（Service Layer）] 承载核心业务逻辑，如任务管理、状态管理与模型管理。
+    \item[推理层（Inference Layer）] 组织推理管线与数据处理流程，负责推理流程编排与执行。
+    \item[模型层（Model Layer）] 集成深度学习框架与预训练模型，利用 GPU/CUDA 完成加速计算。
+\end{description}
+
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[
+        scale=0.9,
+        node distance=1.5cm,
+        auto,
+        font=\small,
+        box/.style={rectangle, draw, thick, minimum width=7cm, minimum height=0.8cm,
+                    align=center, fill=blue!10},
+        title/.style={align=center, font=\large\bfseries},
+        arrow/.style={->, thick, line width=1.5pt}
+    ]
+
+    % 标题
+    \node[title] at (3.5, 9) {系统五层分层架构设计};
+
+    % 展示层
+    \node[box, fill=cyan!20] (presentation) at (3.5, 7.5) {\shortstack{\textbf{展示层（Presentation Layer）}\\Streamlit Web UI (Port 8501)}};
+
+    % HTTP 通信
+    \node[align=center] at (3.5, 6.8) {$\Downarrow$ HTTP REST 通信 $\Downarrow$};
+
+    % API 层
+    \node[box, fill=green!20] (api) at (3.5, 6) {\shortstack{\textbf{API 层（API Layer）}\\FastAPI + Uvicorn (Port 8001)}};
+
+    % 函数调用
+    \node[align=center] at (3.5, 5.3) {$\Downarrow$ 函数调用 $\Downarrow$};
+
+    % 服务层
+    \node[box, fill=yellow!20, minimum width=8cm] (service) at (3.5, 4.5) {\shortstack{\textbf{服务层（Service Layer）}\\TaskManager | StateManager | ModelRegistry}};
+
+    % 函数调用
+    \node[align=center] at (3.5, 3.8) {$\Downarrow$ 函数调用 $\Downarrow$};
+
+    % 推理层
+    \node[box, fill=orange!20, minimum width=8cm] (inference) at (3.5, 3) {\shortstack{\textbf{推理层（Inference Layer）}\\Hallo2 Pipeline | 数据处理器}};
+
+    % 函数调用
+    \node[align=center] at (3.5, 2.3) {$\Downarrow$ 函数调用 $\Downarrow$};
+
+    % 模型层
+    \node[box, fill=red!20, minimum width=8cm] (model) at (3.5, 1.5) {\shortstack{\textbf{模型层（Model Layer）}\\PyTorch + CUDA + 预训练模型}};
+
+    % 右侧说明
+    \node[align=center, anchor=west] at (11.5, 7.5) {\small \textbf{用户交互}};
+    \node[align=center, anchor=west, font=\tiny] at (11.5, 7.1) {文件上传、参数配置};
+
+    \node[align=center, anchor=west] at (11.5, 6) {\small \textbf{请求处理}};
+    \node[align=center, anchor=west, font=\tiny] at (11.5, 5.6) {参数验证、路由};
+
+    \node[align=center, anchor=west] at (11.5, 4.5) {\small \textbf{业务逻辑}};
+    \node[align=center, anchor=west, font=\tiny] at (11.5, 4.1) {任务管理、状态管理};
+
+    \node[align=center, anchor=west] at (11.5, 3) {\small \textbf{核心推理}};
+    \node[align=center, anchor=west, font=\tiny] at (11.5, 2.6) {模型执行、数据处理};
+
+    \node[align=center, anchor=west] at (11.5, 1.5) {\small \textbf{硬件基础}};
+    \node[align=center, anchor=west, font=\tiny] at (11.5, 1.1) {深度学习框架};
+
+    \end{tikzpicture}
+    \caption{数字人视频生成系统五层分层架构}
+    \label{fig:system_architecture_layers}
+\end{figure}
+
+该分层架构的设计收益主要体现在：
+\begin{itemize}
+    \item \textbf{关注点分离}：职责边界明确，降低模块间耦合，提高可维护性与可演化性。
+    \item \textbf{异步解耦}：交互请求与 GPU 推理过程分离，提升接口响应速度并改善用户体验。
+    \item \textbf{可控调度}：通过队列与并发限制实现资源可控的任务调度策略，降低资源争用风险。
+    \item \textbf{部署与扩展}：各层可按需独立扩展，支持向多进程/多机的形态演进。
+    \item \textbf{可测试性}：层间接口清晰，有利于单元测试与集成测试的构建。
+\end{itemize}
+
+系统运行流程可概括为：用户通过前端 Web 界面完成图像与音频的上传交互与参数配置；前端以 HTTP 调用后端 API 创建异步推理任务；API 层完成参数校验与任务创建后将任务入队，由后台执行推理。在任务执行期间，StateManager 持续维护任务状态与进度信息，前端通过轮询获取最新状态；推理完成后返回生成结果供用户预览与下载。
+
+\subsubsection{展示层}
+
+展示层选择 Streamlit 作为交互层实现框架，用于快速构建 Web 用户界面与交互流程。选择 Streamlit 的主要原因包括：
+
+\begin{itemize}
+    \item \textbf{开发效率}：可基于 Python 代码快速构建交互式应用，降低前端工程投入。
+    \item \textbf{迭代便利}：支持热更新机制，便于在实验与原型阶段快速迭代交互流程。
+    \item \textbf{组件完备}：内置上传、下载、进度条等常用组件，能够覆盖关键交互需求。
+    \item \textbf{缓存机制}：支持 \texttt{@st.cache} 等缓存机制，便于复用中间结果与加速交互响应。
+    \item \textbf{开源生态}：开源可用，便于部署与二次开发。
+\end{itemize}
+
+展示层面向用户提供统一的交互入口，其功能设计可概括为：
+\begin{itemize}
+    \item \textbf{输入与校验}：图像/音频上传、格式校验与预览反馈；
+    \item \textbf{参数化配置}：分辨率（如 \(512\times512\) px）、帧率（20/25/30 FPS）、时长与数据精度等参数设置；
+    \item \textbf{任务交互}：任务提交、进度反馈与状态提示；
+    \item \textbf{结果获取}：生成结果预览、下载与历史记录查询；
+    \item \textbf{可用性增强}：错误提示与基础帮助信息，以及国际化扩展能力。
+\end{itemize}
+上述交互细节与界面布局的工程实现见 \ref{sec:impl-frontend} 节。
+
+在默认部署配置下，展示层监听本地 8501 端口，用户可通过浏览器访问 \texttt{http://localhost:8501} 使用系统。展示层通过 \texttt{requests} 库与后端 API 通信，从而实现交互层与服务层的解耦。
+
+\subsubsection{API层}
+
+API 层选择 FastAPI 框架实现 RESTful 接口，用于为前端交互与第三方集成提供统一的任务服务入口。选择 FastAPI 作为 API 框架的主要原因包括：
+
+\begin{itemize}
+    \item \textbf{高性能}：基于 ASGI 标准，具备良好的异步处理能力，可支撑高并发接入。
+    \item \textbf{接口可用性}：采用自动化接口文档生成机制（Swagger UI / ReDoc），便于接口测试与快速集成。
+    \item \textbf{数据验证}：集成 Pydantic，实现请求参数验证与类型约束，降低无效请求对系统的影响。
+    \item \textbf{异步支持}：原生支持 \texttt{async/await}，便于与异步任务体系协同。
+    \item \textbf{工程维护}：代码组织清晰，便于维护与扩展。
+\end{itemize}
+
+\paragraph{RESTful API 设计原则}
+
+系统的API设计遵循以下RESTful原则：
+
+\begin{enumerate}
+    \item \textbf{资源导向}：URI表示资源而非操作，例如 \texttt{/api/v1/tasks} 表示任务资源
+    \item \textbf{标准 HTTP 方法}：使用 GET 获取资源、POST 创建资源、DELETE 删除资源
+    \item \textbf{版本控制}：使用 \texttt{/api/v1/} 路径前缀实现API版本管理
+    \item \textbf{一致的响应格式}：所有API返回统一的JSON格式，包含code、message、data等字段
+    \item \textbf{合理的 HTTP 状态码}：200 表示成功、400 表示请求错误、500 表示服务器错误等
+\end{enumerate}
+
+\paragraph{核心API端点}
+
+系统的核心API端点如表~\ref{tab:api_endpoints}所示。
+
+\begin{table}[h]
+    \centering
+    \caption{系统核心API端点}
+    \small
+    \setlength{\tabcolsep}{4pt}
+    \renewcommand{\arraystretch}{1.05}
+    \begin{tabular}{|l|l|l|p{4cm}|}
+        \hline
+        \textbf{HTTP方法} & \textbf{端点} & \textbf{功能描述} & \textbf{主要参数/返回值} \\
+        \hline
+        GET & /health & 简单健康检查 & 返回 200 OK \\
+        \hline
+        GET & /api/v1/health & 详细系统状态 & 返回 GPU 状态、模型加载状态 \\
+        \hline
+        GET & /api/v1/models & 列出所有可用模型 & 返回模型列表和基本信息 \\
+        \hline
+        GET & /api/v1/models/\{name\} & 获取指定模型详细信息 & 返回模型的详细配置和参数 \\
+        \hline
+        POST & /api/v1/inference/hallo2 & 提交推理任务 & 输入：图像、音频、参数；返回 task\_id \\
+        \hline
+        POST & /api/v1/inference/hallo2/config & 设置推理参数 & 输入：配置参数；返回确认信息 \\
+        \hline
+        GET & /api/v1/tasks & 获取所有任务列表 & 返回所有任务的简要信息 \\
+        \hline
+        GET & /api/v1/tasks/\{task\_id\} & 查询任务状态 & 返回任务进度、状态、错误信息等 \\
+        \hline
+        GET & /api/v1/tasks/\{task\_id\}/video & 下载生成视频 & 返回生成的视频文件（MP4格式） \\
+        \hline
+        GET & /api/v1/tasks/\{task\_id\}/logs & 获取任务日志 & 返回任务执行的详细日志 \\
+        \hline
+        DELETE & /api/v1/tasks/\{task\_id\} & 取消任务 & 返回取消成功确认 \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\paragraph{接口约定}
+
+API 的请求与响应格式遵循统一约定：推理任务提交采用包含图像与音频的多媒体请求（如 \texttt{multipart/form-data}），并通过结构化参数描述输出分辨率、帧率与时长等控制项；接口响应采用统一的 JSON 封装，返回 \texttt{task\_id}、任务状态与必要的错误信息，以支持前端轮询与结果获取。具体字段定义、返回示例与序列化细节见 \ref{sec:impl-backend} 节。
+
+\paragraph{数据验证}
+
+API 层通过 Pydantic 对请求参数与响应结构进行类型约束与范围校验，以在接口入口处提前拦截无效输入，从而降低其对推理链路与资源占用的影响。
+
+\paragraph{异常处理}
+
+API 层实现全局异常处理器，以确保异常被统一捕获并返回一致的错误响应格式：
+
+\begin{enumerate}
+    \item \textbf{文件验证异常}：文件格式错误、大小超限等
+    \item \textbf{参数验证异常}：由 Pydantic 自动捕获的参数验证错误
+    \item \textbf{任务异常}：任务ID不存在、任务已取消等
+    \item \textbf{系统异常}：GPU不可用、显存溢出等
+    \item \textbf{未知异常}：捕获所有未预期的异常，防止服务崩溃
+\end{enumerate}
+
+综上，API 层设计为系统提供了高性能、模块化的任务接口体系，其端点组织结构如图~\ref{fig:api_endpoints}所示。
+
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[
+        scale=0.85,
+        node distance=1.5cm,
+        auto,
+        endpoint/.style={rectangle, draw, thick, fill=cyan!20, minimum width=2.2cm,
+                         minimum height=0.6cm, align=center, font=\tiny},
+        method/.style={align=center, font=\tiny\bfseries},
+        arrow/.style={->, thick}
+    ]
+
+    % 标题
+    \node[align=center] at (4.5, 8.5) {\Large \textbf{FastAPI 端点架构}};
+
+    % 健康检查组
+    \node[method] at (1.5, 7.5) {健康检查};
+    \node[endpoint, fill=green!30] (health1) at (1.5, 6.8) {GET /health};
+    \node[endpoint, fill=green!30] (health2) at (1.5, 6) {GET /api/v1/health};
+
+    % 推理端点组
+    \node[method] at (4.5, 7.5) {推理任务};
+    \node[endpoint, fill=blue!30] (inferencePost) at (4.5, 6.8) {POST /inference/hallo2};
+    \node[endpoint, fill=blue!30] (inferenceConfig) at (4.5, 6) {POST /inference/config};
+
+    % 任务管理组
+    \node[method] at (7.5, 7.5) {任务管理};
+    \node[endpoint, fill=orange!30] (tasksList) at (7.5, 6.8) {GET /tasks};
+    \node[endpoint, fill=orange!30] (taskStatus) at (7.5, 6) {GET /tasks/\{id\}};
+
+    % 模型端点组
+    \node[method] at (10.5, 7.5) {模型信息};
+    \node[endpoint, fill=purple!30] (modelsList) at (10.5, 6.8) {GET /models};
+    \node[endpoint, fill=purple!30] (modelInfo) at (10.5, 6) {GET /models/\{name\}};
+
+    % 结果下载
+    \node[method] at (4.5, 4.5) {结果下载};
+    \node[endpoint, fill=red!30] (downloadVideo) at (4.5, 3.8) {GET /tasks/\{id\}/video};
+    \node[endpoint, fill=red!30] (downloadLogs) at (4.5, 3) {GET /tasks/\{id\}/logs};
+
+    % 删除操作
+    \node[endpoint, fill=red!30] (deleteTask) at (7.5, 3.8) {DELETE /tasks/\{id\}};
+
+    % 数据流向箭头
+    \draw[arrow] (inferencePost) -- (4.5, 5.2);
+    \node[align=center, font=\tiny] at (3.5, 5.2) {提交};
+
+    \draw[arrow] (4.5, 5.2) -- (taskStatus);
+    \node[align=center, font=\tiny] at (5.5, 5.5) {查询};
+
+    \draw[arrow] (taskStatus) -- (downloadVideo);
+    \node[align=center, font=\tiny] at (6.5, 4.5) {下载};
+
+    \end{tikzpicture}
+    \caption{FastAPI 端点架构和数据流}
+    \label{fig:api_endpoints}
+\end{figure}
+
+
+\subsubsection{服务层}
+
+服务层在系统架构中承担业务逻辑与资源调度的核心职能，其设计目标是构建松耦合的任务调度与状态管理机制，并为模型推理提供统一的资源治理入口。服务层主要由三个关键模块构成：
+
+\paragraph{TaskManager（任务队列管理）}
+
+TaskManager 用于管理推理任务的全生命周期，并以生产者--消费者模式组织任务的创建、排队与执行：
+
+\begin{itemize}
+    \item \textbf{任务队列}：采用 Python 标准库的 \texttt{queue.Queue} 构建线程安全队列。
+    \item \textbf{后台线程}：启动可配置数量的后台工作线程，持续从队列中取出任务并执行。
+    \item \textbf{并发控制}：使用信号量（Semaphore）限制同时执行的任务数；在单 GPU 配置下默认并发度为 1，以降低显存溢出风险。
+    \item \textbf{任务取消}：支持移除队列中未执行任务；对运行中任务以超时机制进行治理。
+    \item \textbf{超时控制}：设置单任务最大执行时长（默认 600 s），超时自动终止任务并释放资源。
+    \item \textbf{优雅关闭}：服务停止时等待当前任务收敛后退出，避免任务中断导致的状态不一致。
+\end{itemize}
+
+\paragraph{StateManager（状态管理）}
+
+StateManager 用于维护任务状态与进度信息，为前端提供可观测的实时反馈。任务状态转移关系如图~\ref{fig:task_state_machine}所示。
+
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[
+        scale=1,
+        node distance=2cm,
+        auto,
+        state/.style={circle, draw, thick, minimum width=1.5cm, align=center},
+        transition/.style={->, thick, bend left},
+        font=\small
+    ]
+
+    % 标题
+    \node[align=center] at (3.5, 4.5) {\large \textbf{任务生命周期状态机}};
+
+    % 状态节点
+    \node[state, fill=yellow!40] (pending) at (1, 2.5) {\shortstack{Pending\\(等待)}};
+    \node[state, fill=cyan!40] (running) at (3.5, 2.5) {\shortstack{Running\\(运行)}};
+    \node[state, fill=green!40] (completed) at (6, 2.5) {\shortstack{Completed\\(完成)}};
+    \node[state, fill=red!40] (failed) at (6, 0.5) {\shortstack{Failed\\(失败)}};
+
+    % 状态转移
+    \draw[transition] (pending) to node[above] {submit} (running);
+    \draw[transition] (running) to node[above] {success} (completed);
+    \draw[transition] (running) to node[right] {error} (failed);
+    \draw[transition] (pending) to node[left] {cancel} (failed);
+
+    % 说明文字
+    \node[align=center, font=\tiny] at (1, 1.5) {\shortstack{API已接受\\等待执行}};
+    \node[align=center, font=\tiny] at (3.5, 1.5) {\shortstack{推理进行中\\实时更新进度}};
+    \node[align=center, font=\tiny] at (6, 1.5) {\shortstack{视频已生成\\可下载}};
+    \node[align=center, font=\tiny] at (6, -0.5) {\shortstack{推理失败\\保存错误日志}};
+
+    \end{tikzpicture}
+    \caption{任务生命周期状态机}
+    \label{fig:task_state_machine}
+\end{figure}
+
+主要功能包括：
+
+\begin{itemize}
+    \item \textbf{任务状态}：定义任务的四个状态（\texttt{Pending/Running/Completed/Failed}）
+    \item \textbf{进度追踪}：记录任务执行进度（0--100\%）与当前处理阶段
+    \item \textbf{元数据存储}：存储任务的创建时间、开始时间、完成时间、输入参数、输出路径等
+    \item \textbf{错误记录}：任务失败时记录错误信息、错误堆栈、执行日志
+    \item \textbf{线程安全}：使用 \texttt{threading.RLock} 保证多线程环境下的并发访问安全
+    \item \textbf{内存存储}：使用内存中的字典存储状态（可扩展为数据库存储）
+\end{itemize}
+
+\paragraph{ModelRegistry（模型注册表）}
+
+ModelRegistry实现了Plugin模式，支持灵活的模型扩展：
+
+\begin{itemize}
+    \item \textbf{模型注册}：支持通过装饰器或配置文件注册新的模型
+    \item \textbf{延迟加载}：模型仅在首次调用时从磁盘加载到内存和GPU，减少启动时间
+    \item \textbf{实例缓存}：已加载的模型实例保存在内存中，后续请求直接返回缓存实例
+    \item \textbf{模型卸载}：支持手动卸载模型以释放 GPU 显存，或自动卸载长时间未使用的模型
+    \item \textbf{生命周期管理}：提供 \texttt{initialize()}、\texttt{validate()}、\texttt{cleanup()} 等生命周期钩子
+    \item \textbf{错误恢复}：模型加载失败时自动清理资源，防止资源泄漏
+    \item \textbf{模型信息}：提供模型的元信息查询接口，如模型名称、版本、所需显存等
+\end{itemize}
+
+\subsubsection{推理层}
+
+推理层承载 Hallo2 推理管道的核心流程编排。为提高流程可解释性与模块可替换性，本研究将推理过程组织为三阶段结构：预处理、推理与后处理。
+
+\paragraph{预处理阶段（Preprocessing）}
+
+预处理阶段对输入的图像和音频进行处理，为推理准备数据：
+
+\begin{enumerate}
+    \item \textbf{图像预处理}
+    \begin{itemize}
+        \item 人脸检测：使用 MediaPipe 或 OpenCV 检测图像中的人脸位置和大小
+        \item 人脸对齐：对检测到的人脸进行关键点对齐，确保脸部方向正确
+        \item 掩码生成：基于人脸区域生成二值分割掩码，用于后续的人脸定位
+        \item 特征提取：使用预训练的人脸识别模型提取人脸的embedding向量
+        \item 归一化：将图像归一化到模型输入的格式（0-1浮点数）
+    \end{itemize}
+
+    \item \textbf{音频预处理}
+    \begin{itemize}
+        \item 音频加载：读取音频文件并重采样到标准采样率（通常 16 kHz）
+        \item 音频分离：使用音源分离模型（如Demucs）分离人声和背景音乐
+        \item 特征提取：使用WAV2Vec2模型提取音频的梅尔谱图特征或phoneme特征
+        \item 时间对齐：将音频特征与视频帧进行时间对齐，确保音视频同步
+    \end{itemize}
+
+    \item \textbf{数据准备}
+    \begin{itemize}
+        \item 批处理：将处理后的数据组织成模型输入所需的格式
+        \item GPU 转移：将数据从 CPU 内存转移到 GPU 显存
+        \item 维度检查：验证数据维度是否符合模型要求
+    \end{itemize}
+\end{enumerate}
+
+\paragraph{推理阶段（Inference）}
+
+推理阶段使用预训练的 Hallo2 模型生成视频序列。如图~\ref{fig:hallo2_pipeline}所示，完整推理过程包括以下主要模型组件：
+
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[
+        scale=1,
+        node distance=2cm,
+        auto,
+        stageBox/.style={rectangle, draw, thick, fill=blue!20, minimum width=2.2cm,
+                          minimum height=1cm, align=center},
+        processBox/.style={rectangle, draw, fill=green!20, minimum width=1.8cm,
+                            minimum height=0.5cm, align=center, font=\tiny},
+        arrow/.style={->, thick, line width=1.5pt}
+    ]
+
+    % 标题
+    \node[align=center] at (6, 5.5) {\Large \textbf{Hallo2 推理管道三阶段流程}};
+
+    % 输入
+    \node at (0.8, 4) {\textbf{输入}};
+    \node[processBox] (img) at (0.8, 3.3) {人物图像};
+    \node[processBox] (audio) at (0.8, 2.5) {音频文件};
+
+    % 阶段1：预处理
+    \node[stageBox, fill=cyan!30] (stage1) at (3, 3) {\textbf{预处理}（Preprocessing）};
+    \node[processBox, fill=cyan!20] at (3, 1.8) {\shortstack{人脸检测\\掩码生成}};
+    \node[processBox, fill=cyan!20] at (3, 1.2) {\shortstack{音频分离\\特征提取}};
+
+    % 箭头
+    \draw[arrow] (img) -- (1.8, 3);
+    \draw[arrow] (audio) -- (1.8, 2.5);
+    \draw[arrow] (1.8, 3) -- (3, 3);
+
+    % 阶段2：推理
+    \node[stageBox, fill=orange!30] (stage2) at (6, 3) {\textbf{推理}（Inference）};
+    \node[processBox, fill=orange!20] at (6, 1.8) {\shortstack{VAE编码\\条件融合}};
+    \node[processBox, fill=orange!20] at (6, 1.2) {\shortstack{扩散逆向\\生成视频}};
+
+    \draw[arrow] (stage1) -- (stage2);
+
+    % 阶段3：后处理
+    \node[stageBox, fill=red!30] (stage3) at (9, 3) {\textbf{后处理}（Postprocessing）};
+    \node[processBox, fill=red!20] at (9, 1.8) {\shortstack{VAE解码\\视频编码}};
+    \node[processBox, fill=red!20] at (9, 1.2) {\shortstack{音频混合\\文件输出}};
+
+    \draw[arrow] (stage2) -- (stage3);
+
+    % 输出
+    \node at (11.2, 3) {\textbf{输出}};
+    \draw[arrow] (stage3) -- (11.2, 3.3);
+    \node[processBox, fill=green!40] at (11.2, 2.5) {MP4视频文件};
+
+    \end{tikzpicture}
+    \caption{Hallo2 推理管道三阶段流程（预处理-推理-后处理）}
+    \label{fig:hallo2_pipeline}
+\end{figure}
+
+\begin{enumerate}
+    \item \textbf{模型组件}
+    \begin{itemize}
+        \item \textbf{VAE（变分自编码器）}：编码高分辨率图像到低维潜在空间，解码生成的潜在向量回到像素空间
+        \item \textbf{Reference UNet2D}：以参考人物图像为条件，提取身份信息和外观风格
+        \item \textbf{Denoising UNet3D}：3D卷积架构用于时间维度的连贯性，通过逐步去噪生成视频
+        \item \textbf{Motion Module}：运动控制模块，接收音频特征作为驱动信号
+        \item \textbf{FaceLocator}：人脸定位模块，确保生成的人脸位置与参考图像对齐
+    \end{itemize}
+
+    \item \textbf{推理过程}
+    \begin{itemize}
+        \item 条件编码：使用Reference UNet2D对参考图像进行编码，提取身份信息
+        \item 音频条件：将音频特征映射到Denoising UNet3D的特征空间
+        \item 扩散逆向：从噪声开始，通过多步去噪生成视频帧（通常 50--100 步）
+        \item 人脸变换：使用FaceLocator对生成的人脸进行微调，确保位置对齐
+        \item 潜在空间视频：获得生成的视频在潜在空间中的表示
+    \end{itemize}
+
+    \item \textbf{GPU优化}
+    \begin{itemize}
+        \item 梯度检查点：使用 gradient checkpointing 技术减少显存占用（约 50\%）
+        \item 精度选择：支持 float32、float16、bfloat16 多种精度，其中 float16 可显著降低显存占用（约 50\%）
+        \item 显存管理：及时释放不需要的中间张量，防止显存溢出
+        \item 批量处理：对多个帧进行批量处理，提高GPU利用率
+    \end{itemize}
+\end{enumerate}
+
+\paragraph{后处理阶段（Postprocessing）}
+
+后处理阶段将模型输出转换为最终的视频文件：
+
+\begin{enumerate}
+    \item \textbf{视频合成}
+    \begin{itemize}
+        \item VAE解码：将潜在空间的视频解码为像素空间（RGB图像序列）
+        \item 帧序列整合：将所有生成的帧组织成视频序列
+        \item 分辨率调整：根据用户设置调整输出分辨率
+        \item 视频编码：使用 H.264 编码器压缩视频，输出 MP4 文件
+    \end{itemize}
+
+    \item \textbf{音频处理}
+    \begin{itemize}
+        \item 音频提取：从原始音频中提取人声（已在预处理中完成）
+        \item 音频混合：将人声与背景音混合
+        \item 音量调整：调整人声和背景音的相对音量平衡
+        \item 音视频同步：确保音频和视频帧率对齐
+    \end{itemize}
+
+    \item \textbf{文件输出}
+    \begin{itemize}
+        \item 格式转换：转换为MP4或其他通用视频格式
+        \item 质量设置：根据用户设置调整输出视频比特率和质量
+        \item 元数据添加：添加视频标题、创建时间等元数据
+        \item 文件保存：将最终视频保存到任务输出目录
+    \end{itemize}
+\end{enumerate}
+
+\subsubsection{模型层}
+
+模型层集成了深度学习框架和预训练模型，为上层推理提供计算基础。
+
+\paragraph{深度学习框架}
+
+系统基于以下框架构建：
+
+\begin{itemize}
+    \item \textbf{PyTorch 2.1.1}：核心深度学习框架，提供张量计算和自动求导功能
+    \item \textbf{NVIDIA CUDA 12.x}：GPU并行计算平台，提供GPU加速
+    \item \textbf{cuDNN}：CUDA深度神经网络库，提供高效的卷积、激活函数等操作
+    \item \textbf{Diffusers}：Hugging Face官方的扩散模型库，提供各种预训练扩散模型
+    \item \textbf{Transformers}：Hugging Face官方的变换器模型库，提供预训练的语言和多模态模型
+\end{itemize}
+
+\paragraph{预训练模型}
+
+系统集成的主要预训练模型包括：
+
+\begin{enumerate}
+    \item \textbf{Stable Diffusion v1.5}
+    \begin{itemize}
+        \item 基础的文本到图像扩散模型
+        \item 在本系统中用于视频帧生成的基础
+        \item 参数量约8亿，精度为float16时约3.5GB显存
+    \end{itemize}
+
+    \item \textbf{Motion Module}
+    \begin{itemize}
+        \item 时间维度的运动控制模块
+        \item 基于3D卷积实现，确保视频帧间的时间连贯性
+        \item 接收音频特征作为驱动信号
+    \end{itemize}
+
+    \item \textbf{WAV2Vec2}
+    \begin{itemize}
+        \item 音频自监督学习模型
+        \item 将音频转换为离散的特征表示
+        \item 用于提取音频驱动信号
+        \item 模型参数量约3.1亿
+    \end{itemize}
+
+    \item \textbf{Face Analysis}
+    \begin{itemize}
+        \item 包括人脸检测、人脸对齐、人脸识别等功能
+        \item 使用RetinaFace进行人脸检测
+        \item 使用ArcFace进行人脸识别和embedding提取
+    \end{itemize}
+
+    \item \textbf{Audio Separator}
+    \begin{itemize}
+        \item 音源分离模型（如Demucs）
+        \item 将混音音频分离为不同的声源（人声、伴奏等）
+        \item 用于提取清晰的人声信号
+    \end{itemize}
+
+    \item \textbf{其他辅助模型}
+    \begin{itemize}
+        \item OpenAI CLIP：用于文本-图像特征对齐
+        \item MPS（多尺度人脸识别）：用于人脸定位和对齐
+    \end{itemize}
+\end{enumerate}
+
+\paragraph{GPU设备管理}
+
+系统实现了较为完善的 GPU 设备与显存管理机制。如图~\ref{fig:gpu_memory_management}所示，从 GPU 检测到显存释放的完整流程包括：
+
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[
+        scale=0.85,
+        node distance=1.2cm,
+        auto,
+        memoryBox/.style={rectangle, draw, thick, fill=green!20, minimum width=2.2cm,
+                           minimum height=0.55cm, align=center, font=\tiny},
+        controlBox/.style={rounded rectangle, draw, thick, fill=orange!20,
+                            minimum width=2cm, minimum height=0.5cm, align=center, font=\tiny},
+        arrow/.style={->, thick}
+    ]
+
+    % 标题
+    \node[align=center] at (5, 7.5) {\Large \textbf{GPU 内存管理流程}};
+
+    % 上行：模型加载
+    \node[controlBox] (detectGpu) at (2, 6.5) {检测GPU};
+    \node[memoryBox] (allocate) at (2, 5.5) {分配显存};
+    \node[controlBox] (lazyLoad) at (2, 4.5) {延迟加载};
+    \node[memoryBox] (modelLoaded) at (2, 3.5) {模型已加载};
+
+    \draw[arrow] (detectGpu) -- (allocate);
+    \draw[arrow] (allocate) -- (lazyLoad);
+    \draw[arrow] (lazyLoad) -- (modelLoaded);
+
+    % 中间：推理执行
+    \node[controlBox] (inference) at (5, 5.5) {执行推理};
+    \node[memoryBox] (tempMemory) at (5, 4.5) {临时显存占用};
+    \node[controlBox] (monitor) at (5, 3.5) {监控占用};
+
+    \draw[arrow] (modelLoaded) -- (inference);
+    \draw[arrow] (inference) -- (tempMemory);
+    \draw[arrow] (tempMemory) -- (monitor);
+
+    % 下行：内存管理
+    \node[controlBox] (precision) at (8, 6.5) {多精度支持};
+    \node[memoryBox] (floatType) at (8, 5.5) {float32/16};
+    \node[controlBox] (checkpoint) at (8, 4.5) {梯度检查点};
+    \node[memoryBox] (optimize) at (8, 3.5) {显存优化};
+
+    \draw[arrow] (precision) -- (floatType);
+    \draw[arrow] (floatType) -- (checkpoint);
+    \draw[arrow] (checkpoint) -- (optimize);
+
+    % 清理阶段
+    \node[controlBox] (cleanup) at (5, 2) {执行清理};
+    \node[memoryBox] (release) at (5, 0.8) {释放显存};
+
+    \draw[arrow] (monitor) -- (cleanup);
+    \draw[arrow] (optimize) -- (cleanup);
+    \draw[arrow] (cleanup) -- (release);
+
+    \end{tikzpicture}
+    \caption{GPU 显存管理流程}
+    \label{fig:gpu_memory_management}
+\end{figure}
+
+\begin{enumerate}
+    \item \textbf{设备检测}
+    \begin{itemize}
+        \item 检测系统中可用的GPU设备
+        \item 查询每个GPU的显存大小和计算能力
+        \item 选择显存最大的GPU作为主推理设备
+    \end{itemize}
+
+    \item \textbf{显存管理}
+    \begin{itemize}
+        \item 及时释放不需要的张量：\texttt{del tensor; torch.cuda.empty\_cache()}
+        \item 使用上下文管理器自动释放临时变量
+        \item 监控显存占用情况，防止OOM
+        \item 支持CPU-GPU内存转移，降低显存压力
+    \end{itemize}
+
+    \item \textbf{精度管理}
+    \begin{itemize}
+        \item 支持float32（完整精度）：精度最高，显存占用最大
+        \item 支持float16（半精度）：精度和显存平衡，显存减半
+        \item 支持bfloat16（脑浮点数）：精度和速度的较好平衡
+        \item 自动精度转换：模型和数据在不同精度间灵活转换
+    \end{itemize}
+
+    \item \textbf{多GPU支持}
+    \begin{itemize}
+        \item 支持指定GPU ID，在多GPU系统中选择特定GPU
+        \item 支持多GPU分布式推理（可扩展功能）
+        \item 支持CPU推理（虽然性能很低，但提供备选方案）
+    \end{itemize}
+
+    \item \textbf{性能监控}
+    \begin{itemize}
+        \item 记录 GPU 显存占用统计
+        \item 记录模型加载和推理耗时
+        \item 提供性能监控API供外部集成
+    \end{itemize}
+\end{enumerate}
+
+\subsection{模块设计}
+
+本小节详细说明系统的各主要模块及其设计。各模块之间的关系如图~\ref{fig:module_dependency}所示。
+
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[
+        scale=0.9,
+        node distance=1.5cm,
+        auto,
+        module/.style={rectangle, draw, thick, fill=blue!20, minimum width=1.5cm,
+                       minimum height=0.6cm, align=center, font=\small},
+        core/.style={rectangle, draw, thick, fill=red!30, minimum width=1.8cm,
+                     minimum height=0.6cm, align=center, font=\small},
+        dependency/.style={->, thick, dashed},
+        arrow/.style={->, thick}
+    ]
+
+    % 标题
+    \node[align=center] at (4.5, 7.5) {\Large \textbf{核心模块依赖关系}};
+
+    % 核心模块
+    \node[core] (api) at (1.5, 6) {\shortstack{FastAPI\\App}};
+    \node[module] (taskMgr) at (1.5, 4.5) {TaskManager};
+    \node[module] (stateMgr) at (4.5, 4.5) {StateManager};
+    \node[module] (modelReg) at (7.5, 4.5) {ModelRegistry};
+
+    % 推理模块
+    \node[module] (pipeline) at (4.5, 3) {Hallo2Pipeline};
+
+    % 处理器模块
+    \node[module] (imgProc) at (1.5, 1.5) {ImageProcessor};
+    \node[module] (audioProc) at (4.5, 1.5) {AudioProcessor};
+    \node[module] (maskProc) at (7.5, 1.5) {MaskProcessor};
+
+    % 依赖关系
+    \draw[arrow] (api) -- (taskMgr);
+    \draw[arrow] (api) -- (stateMgr);
+    \draw[arrow] (taskMgr) -- (stateMgr);
+    \draw[arrow] (taskMgr) -- (modelReg);
+
+    \draw[arrow] (taskMgr) -- (pipeline);
+    \draw[arrow] (modelReg) -- (pipeline);
+
+    \draw[arrow] (pipeline) -- (imgProc);
+    \draw[arrow] (pipeline) -- (audioProc);
+    \draw[arrow] (pipeline) -- (maskProc);
+
+    % 说明
+    \node[font=\tiny, align=center] at (1.5, 0.5) {\shortstack{图像\\预处理}};
+    \node[font=\tiny, align=center] at (4.5, 0.5) {\shortstack{音频\\预处理}};
+    \node[font=\tiny, align=center] at (7.5, 0.5) {\shortstack{掩码\\处理}};
+
+    \end{tikzpicture}
+    \caption{系统核心模块依赖关系}
+    \label{fig:module_dependency}
+\end{figure}
+
+其中，系统核心模块及其关系如表~\ref{tab:module_relations}所示。
+
+\begin{table}[h]
+    \centering
+    \caption{系统核心模块及其关系}
+    \small
+    \begin{tabular}{|l|l|l|}
+        \hline
+        \textbf{模块名称} & \textbf{主要职责} & \textbf{依赖模块} \\
+        \hline
+        FastAPI App & HTTP请求处理、路由管理 & TaskManager、StateManager \\
+        \hline
+        TaskManager & 任务队列、并发控制、后台执行 & StateManager、ModelRegistry \\
+        \hline
+        StateManager & 状态追踪、进度管理、元数据存储 & 无 \\
+        \hline
+        ModelRegistry & 模型注册、加载、缓存 & 无 \\
+        \hline
+        Hallo2Pipeline & 推理管道执行 & ModelRegistry、ImageProcessor等 \\
+        \hline
+        ImageProcessor & 图像预处理 & 无 \\
+        \hline
+        AudioProcessor & 音频预处理 & 无 \\
+        \hline
+        MaskProcessor & 掩码处理 & ImageProcessor \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\subsubsection{关键数据结构}
+
+系统的关键数据结构包括：
+
+\begin{enumerate}
+    \item \textbf{Task}：任务对象
+    \begin{itemize}
+        \item task\_id：任务唯一标识
+        \item image\_path、audio\_path：输入文件路径
+        \item parameters：推理参数字典
+        \item status：任务状态
+        \item created\_at、started\_at、completed\_at：时间戳
+    \end{itemize}
+
+    \item \textbf{TaskStatus}：任务状态对象
+    \begin{itemize}
+        \item status：当前状态（pending/running/completed/failed）
+        \item progress：进度百分比（0--100）
+        \item current\_stage：当前处理阶段
+        \item error\_message：错误信息（仅失败时包含）
+    \end{itemize}
+
+    \item \textbf{Model}：模型对象
+    \begin{itemize}
+        \item name：模型名称
+        \item version：模型版本
+        \item loaded：是否已加载
+        \item instance：模型实例引用
+        \item memory\_usage：显存占用
+    \end{itemize}
+\end{enumerate}
+
+\subsection{技术路线}
+
+\subsubsection{技术栈选型与对比}
+
+系统的技术栈选型基于性能、易用性、社区支持等多个因素的综合考虑。关键技术的选型如表~\ref{tab:tech_stack}所示。
+
+\begin{table}[h]
+    \centering
+    \caption{系统关键技术栈选型}
+    \small
+    \begin{tabular}{|l|l|l|l|}
+        \hline
+        \textbf{技术层} & \textbf{选择方案} & \textbf{版本} & \textbf{选型理由} \\
+        \hline
+        Web框架 & FastAPI & 0.104.1+ & 异步性能优异、自动文档 \\
+        \hline
+        ASGI服务器 & Uvicorn & 0.24.0+ & 高性能、低延迟 \\
+        \hline
+        数据验证 & Pydantic & 2.5.0+ & 类型检查、自动验证 \\
+        \hline
+        深度学习 & PyTorch & 2.1.1+ & 灵活易用、生态完整 \\
+        \hline
+        扩散模型库 & Diffusers & latest & Hugging Face官方、预训练模型丰富 \\
+        \hline
+        图像处理 & OpenCV & 4.8.1+ & 人脸检测、图像处理功能完整 \\
+        \hline
+        音频处理 & librosa & 0.10.0+ & 音频分析、特征提取成熟 \\
+        \hline
+        视频处理 & MoviePy & 1.0.3+ & 视频合并、音视频混合 \\
+        \hline
+        前端框架 & Streamlit & 1.28.1+ & 快速开发、无需前端知识 \\
+        \hline
+        测试框架 & pytest & 7.4.3+ & 简洁易用、CI/CD集成良好 \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\subsubsection{架构设计模式}
+
+系统的架构设计采用了多种经典的软件设计模式，以提高代码的可维护性和扩展性：
+
+\begin{enumerate}
+    \item \textbf{Plugin模式}
+    \begin{itemize}
+        \item 用于模型的灵活注册和扩展
+        \item 支持添加新的AI模型而无需修改核心代码
+        \item 实现方式：通过装饰器或配置文件注册模型，ModelRegistry统一管理
+    \end{itemize}
+
+    \item \textbf{生产者-消费者模式}
+    \begin{itemize}
+        \item API端点作为生产者提交任务，后台线程作为消费者执行推理
+        \item 使用线程安全的队列（queue.Queue）解耦前后端
+        \item 提高系统的并发处理能力
+    \end{itemize}
+
+    \item \textbf{单例模式}
+    \begin{itemize}
+        \item 确保全局只有一个ModelRegistry、StateManager、TaskManager实例
+        \item 使用类变量或装饰器实现单例
+        \item 保证共享状态的一致性
+    \end{itemize}
+
+    \item \textbf{工厂模式}
+    \begin{itemize}
+        \item ModelRegistry充当工厂角色，统一创建和管理模型实例
+        \item 支持延迟创建（延迟加载）
+        \item 便于模型版本切换和更新
+    \end{itemize}
+
+    \item \textbf{策略模式}
+    \begin{itemize}
+        \item 支持多种图像预处理策略（不同的人脸检测、掩码生成算法）
+        \item 支持多种精度策略（float32、float16、bfloat16）
+        \item 提供灵活的配置选项
+    \end{itemize}
+
+    \item \textbf{观察者模式}
+    \begin{itemize}
+        \item StateManager作为可观察对象，订阅者（前端或其他服务）可监听任务状态变化
+        \item 支持进度回调、完成事件等通知机制
+        \item 实现实时的任务状态同步
+    \end{itemize}
+\end{enumerate}
+
+\subsubsection{系统工作流程}
+
+系统的完整工作流程如图~\ref{fig:complete_data_flow}和图~\ref{fig:system_sequence}所示。
+
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[
+        scale=0.8,
+        node distance=1.5cm,
+        auto,
+        font=\small,
+        flowBox/.style={rectangle, draw, thick, minimum width=2.5cm, minimum height=0.6cm,
+                         align=center},
+        process/.style={rounded rectangle, draw, thick, minimum width=2.5cm,
+                        minimum height=0.6cm, align=center},
+        arrow/.style={->, thick}
+    ]
+
+    % 第一行：用户和前端
+    \node[flowBox, fill=cyan!20] (user) at (1, 7) {用户};
+    \node[process, fill=cyan!30] (upload) at (1, 5.5) {\shortstack{上传图像\\和音频}};
+
+    % 第二行：前端处理
+    \node[process, fill=green!30] (validate) at (1, 4) {\shortstack{参数验证\\文件检查}};
+    \node[process, fill=green!30] (request) at (3.5, 4) {\shortstack{HTTP POST\\请求}};
+
+    % 第三行：API 层
+    \node[process, fill=yellow!30] (apiProcess) at (3.5, 2.5) {\shortstack{API 验证\\创建任务}};
+    \node[process, fill=yellow!30] (queue) at (6, 2.5) {\shortstack{加入\\任务队列}};
+
+    % 第四行：后台处理
+    \node[process, fill=orange!30] (preprocess) at (1.5, 1) {预处理};
+    \node[process, fill=orange!30] (inference) at (3.5, 1) {推理};
+    \node[process, fill=orange!30] (postprocess) at (5.5, 1) {后处理};
+
+    % 第五行：输出
+    \node[process, fill=red!30] (save) at (3.5, -0.5) {保存视频};
+    \node[flowBox, fill=cyan!20] (download) at (5.5, -0.5) {用户下载};
+
+    % 连接箭头
+    \draw[arrow] (user) -- (upload);
+    \draw[arrow] (upload) -- (validate);
+    \draw[arrow] (validate) -- (request);
+    \draw[arrow] (request) -- (apiProcess);
+    \draw[arrow] (apiProcess) -- (queue);
+    \draw[arrow] (queue) -- (preprocess);
+    \draw[arrow] (preprocess) -- (inference);
+    \draw[arrow] (inference) -- (postprocess);
+    \draw[arrow] (postprocess) -- (save);
+    \draw[arrow] (save) -- (download);
+
+    % 回程箭头（实时更新）
+    \draw[dashed, arrow] (queue.north) -- (1.5, 3) -- (1, 3.5);
+    \node[font=\tiny] at (0.5, 3.2) {轮询};
+
+    \node[align=center] at (3.5, 8) {\textbf{完整的数据流程}};
+
+    \end{tikzpicture}
+    \caption{用户请求到视频输出的完整数据流程}
+    \label{fig:complete_data_flow}
+\end{figure}
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[
+        scale=0.8,
+        node distance=1cm,
+        auto,
+        participant/.style={rectangle, draw, thick, minimum width=1.5cm, align=center, font=\small},
+        lifeline/.style={dashed},
+        message/.style={->, thick},
+        arrow/.style={->, thick}
+    ]
+
+    % 标题
+    \node[align=center] at (6, 8.5) {\Large \textbf{系统交互时序图}};
+
+    % 参与者
+    \node[participant, fill=cyan!20] (user) at (1, 7.5) {用户};
+    \node[participant, fill=green!20] (frontend) at (3, 7.5) {前端};
+    \node[participant, fill=yellow!20] (api) at (5, 7.5) {API};
+    \node[participant, fill=orange!20] (backend) at (7, 7.5) {后端};
+    \node[participant, fill=red!20] (gpu) at (9, 7.5) {GPU};
+
+    % 生命线
+    \draw[lifeline] (1, 7) -- (1, 0.5);
+    \draw[lifeline] (3, 7) -- (3, 0.5);
+    \draw[lifeline] (5, 7) -- (5, 0.5);
+    \draw[lifeline] (7, 7) -- (7, 0.5);
+    \draw[lifeline] (9, 7) -- (9, 0.5);
+
+    % 交互步骤
+    \draw[message] (1, 6.5) -- (3, 6.3) node[midway, above, font=\tiny] {1. 上传文件};
+    \draw[message] (3, 5.9) -- (5, 5.7) node[midway, above, font=\tiny] {2. 验证};
+    \draw[message] (5, 5.3) -- (7, 5.1) node[midway, above, font=\tiny] {3. 创建任务};
+    \draw[message] (5, 4.7) -- (3, 4.5) node[midway, above, font=\tiny] {4. 返回ID};
+
+    \draw[message] (7, 4.1) -- (9, 3.9) node[midway, above, font=\tiny] {5. 推理执行};
+
+    \draw[message, dashed] (3, 3.5) -- (5, 3.3) node[midway, above, font=\tiny] {6. 轮询进度};
+    \draw[message, dashed] (5, 2.9) -- (3, 2.7) node[midway, above, font=\tiny] {7. 返回进度};
+
+    \draw[message] (3, 2.3) -- (1, 2.1) node[midway, above, font=\tiny] {8. 更新UI};
+
+    \draw[message] (9, 1.7) -- (7, 1.5) node[midway, above, font=\tiny] {9. 推理完成};
+    \draw[message] (7, 1.1) -- (5, 0.9) node[midway, above, font=\tiny] {10. 返回结果};
+
+    \end{tikzpicture}
+    \caption{系统完整交互时序图}
+    \label{fig:system_sequence}
+\end{figure}
+
+具体的执行步骤包括：
+
+\begin{enumerate}
+    \item 用户通过 Streamlit Web 界面上传图像与音频文件，并配置推理参数
+    \item 前端通过 HTTP POST 请求调用后端 API：\texttt{/api/v1/inference/hallo2}
+    \item API 层验证输入参数（由 Pydantic 自动验证），并检查文件格式
+    \item 保存上传文件到 \texttt{logs/uploads/\{task\_id\}/} 目录
+    \item TaskManager 创建推理任务并加入任务队列
+    \item StateManager 初始化任务状态为 \texttt{Pending}
+    \item API 端点将 \texttt{task\_id} 返回给前端（响应时间 $<$ 500 ms）
+    \item 后台消费者线程从队列中取出任务，检查并发限制
+    \item 如果并发任务数未达上限，立即执行；否则进入等待队列
+    \item 任务开始执行后，StateManager 更新状态为 \texttt{Running}
+    \item Hallo2Pipeline 执行三阶段推理（预处理 $\rightarrow$ 推理 $\rightarrow$ 后处理）
+    \item 推理过程中，StateManager 实时更新进度
+    \item 前端通过定时轮询（每秒一次）查询 \texttt{/api/v1/tasks/\{task\_id\}} 获取最新进度
+    \item 推理完成后，生成的视频保存到 \texttt{logs/outputs/\{task\_id\}/output.mp4}
+    \item StateManager 更新状态为 \texttt{Completed} 或 \texttt{Failed}
+    \item 用户可调用 \texttt{/api/v1/tasks/\{task\_id\}/video} 下载生成的视频
+    \item 前端展示视频预览和下载选项
+\end{enumerate}
+
+\section{本章小结}
+
+本章围绕数字人视频生成系统的应用背景与需求约束，给出了分层 C/S 架构下的总体设计方案，并从接口层、调度层与推理链路三个维度明确了关键模块的职责划分与数据流组织方式。基于该设计，下一章将面向工程实现给出前端交互、后端服务、异步任务管理与推理管线落地的具体方法（见 \ref{sec:impl-frontend} 与 \ref{sec:impl-backend} 节），并在后续评测章节对生成效率、资源占用与生成质量等指标进行验证。

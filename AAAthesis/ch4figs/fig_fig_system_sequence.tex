@@ -1,0 +1,49 @@
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[
+        scale=0.8,
+        node distance=1cm,
+        auto,
+        participant/.style={rectangle, draw, thick, minimum width=1.5cm, text centered, font=\small},
+        lifeline/.style={dashed},
+        message/.style={->, thick},
+        arrow/.style={->, thick}
+    ]
+
+    % 标题
+    \node[text centered] at (6, 8.5) {\Large \textbf{系统交互时序图}};
+
+    % 参与者
+    \node[participant, fill=cyan!20] (user) at (1, 7.5) {用户};
+    \node[participant, fill=green!20] (frontend) at (3, 7.5) {前端};
+    \node[participant, fill=yellow!20] (api) at (5, 7.5) {API};
+    \node[participant, fill=orange!20] (backend) at (7, 7.5) {后端};
+    \node[participant, fill=red!20] (gpu) at (9, 7.5) {GPU};
+
+    % 生命线
+    \draw[lifeline] (1, 7) -- (1, 0.5);
+    \draw[lifeline] (3, 7) -- (3, 0.5);
+    \draw[lifeline] (5, 7) -- (5, 0.5);
+    \draw[lifeline] (7, 7) -- (7, 0.5);
+    \draw[lifeline] (9, 7) -- (9, 0.5);
+
+    % 交互步骤
+    \draw[message] (1, 6.5) -- (3, 6.3) node[midway, above, font=\tiny] {1. 上传文件};
+    \draw[message] (3, 5.9) -- (5, 5.7) node[midway, above, font=\tiny] {2. 验证};
+    \draw[message] (5, 5.3) -- (7, 5.1) node[midway, above, font=\tiny] {3. 创建任务};
+    \draw[message] (5, 4.7) -- (3, 4.5) node[midway, above, font=\tiny] {4. 返回ID};
+
+    \draw[message] (7, 4.1) -- (9, 3.9) node[midway, above, font=\tiny] {5. 推理执行};
+
+    \draw[message, dashed] (3, 3.5) -- (5, 3.3) node[midway, above, font=\tiny] {6. 轮询进度};
+    \draw[message, dashed] (5, 2.9) -- (3, 2.7) node[midway, above, font=\tiny] {7. 返回进度};
+
+    \draw[message] (3, 2.3) -- (1, 2.1) node[midway, above, font=\tiny] {8. 更新UI};
+
+    \draw[message] (9, 1.7) -- (7, 1.5) node[midway, above, font=\tiny] {9. 推理完成};
+    \draw[message] (7, 1.1) -- (5, 0.9) node[midway, above, font=\tiny] {10. 返回结果};
+
+    \end{tikzpicture}
+    \caption{系统完整交互时序图}
+    \label{fig:system_sequence}
+\end{figure}

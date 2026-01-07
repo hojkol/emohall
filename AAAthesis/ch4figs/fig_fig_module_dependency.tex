@@ -1,0 +1,53 @@
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[
+        scale=0.9,
+        node distance=1.5cm,
+        auto,
+        module/.style={rectangle, draw, thick, fill=blue!20, minimum width=1.5cm,
+                       minimum height=0.6cm, text centered, font=\small},
+        core/.style={rectangle, draw, thick, fill=red!30, minimum width=1.8cm,
+                     minimum height=0.6cm, text centered, font=\small},
+        dependency/.style={->, thick, dashed},
+        arrow/.style={->, thick}
+    ]
+
+    % 标题
+    \node[text centered] at (4.5, 7.5) {\Large \textbf{核心模块依赖关系}};
+
+    % 核心模块
+    \node[core] (api) at (1.5, 6) {FastAPI\\App};
+    \node[module] (task_mgr) at (1.5, 4.5) {TaskManager};
+    \node[module] (state_mgr) at (4.5, 4.5) {StateManager};
+    \node[module] (model_reg) at (7.5, 4.5) {ModelRegistry};
+
+    % 推理模块
+    \node[module] (pipeline) at (4.5, 3) {Hallo2Pipeline};
+
+    % 处理器模块
+    \node[module] (img_proc) at (1.5, 1.5) {ImageProcessor};
+    \node[module] (audio_proc) at (4.5, 1.5) {AudioProcessor};
+    \node[module] (mask_proc) at (7.5, 1.5) {MaskProcessor};
+
+    % 依赖关系
+    \draw[arrow] (api) -- (task_mgr);
+    \draw[arrow] (api) -- (state_mgr);
+    \draw[arrow] (task_mgr) -- (state_mgr);
+    \draw[arrow] (task_mgr) -- (model_reg);
+
+    \draw[arrow] (task_mgr) -- (pipeline);
+    \draw[arrow] (model_reg) -- (pipeline);
+
+    \draw[arrow] (pipeline) -- (img_proc);
+    \draw[arrow] (pipeline) -- (audio_proc);
+    \draw[arrow] (pipeline) -- (mask_proc);
+
+    % 说明
+    \node[font=\tiny, text centered] at (1.5, 0.5) {图像\\预处理};
+    \node[font=\tiny, text centered] at (4.5, 0.5) {音频\\预处理};
+    \node[font=\tiny, text centered] at (7.5, 0.5) {掩码\\处理};
+
+    \end{tikzpicture}
+    \caption{系统核心模块依赖关系}
+    \label{fig:module_dependency}
+\end{figure}

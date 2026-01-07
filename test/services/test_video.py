@@ -3,10 +3,7 @@ import unittest
 import os
 import sys
 from pathlib import Path
-from moviepy import (
-    VideoFileClip,
-)
-# add project root to python path
+from moviepy.editor import VideoFileClip
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from app.models.schema import MaterialInfo
 from app.services import video as vd

@@ -8,35 +8,25 @@ from typing import List
 from loguru import logger
 
 # MoviePy imports with fallback for different versions
-try:
-    from moviepy.editor import (
-        AudioFileClip,
-        ColorClip,
-        CompositeAudioClip,
-        CompositeVideoClip,
-        ImageClip,
-        TextClip,
-        VideoFileClip,
-        afx,
-        concatenate_videoclips,
-    )
-except ImportError:
-    from moviepy import (
-        AudioFileClip,
-        ColorClip,
-        CompositeAudioClip,
-        CompositeVideoClip,
-        ImageClip,
-        TextClip,
-        VideoFileClip,
-        afx,
-        concatenate_videoclips,
-    )
+from moviepy.editor import (
+    AudioFileClip,
+    ColorClip,
+    CompositeAudioClip,
+    CompositeVideoClip,
+    ImageClip,
+    TextClip,
+    VideoFileClip,
+    afx,
+    concatenate_videoclips,
+)
 
+# Handle SubtitlesClip import for different MoviePy versions
 try:
-    from moviepy.video.tools.subtitles import SubtitlesClip
-except ImportError:
     from moviepy.editor import SubtitlesClip
+except ImportError:
+    # SubtitlesClip may not exist in newer versions of MoviePy
+    SubtitlesClip = None
+
 from PIL import ImageFont
 
 from app.models import const
@@ -196,9 +186,9 @@ def combine_videos(
                 clip_ratio = clip.w / clip.h
                 video_ratio = video_width / video_height
                 logger.debug(f"resizing clip, source: {clip_w}x{clip_h}, ratio: {clip_ratio:.2f}, target: {video_width}x{video_height}, ratio: {video_ratio:.2f}")
-                
+
                 if clip_ratio == video_ratio:
-                    clip = clip.resized(new_size=(video_width, video_height))
+                    clip = clip.resize(width=video_width, height=video_height)
                 else:
                     if clip_ratio > video_ratio:
                         scale_factor = video_width / clip_w
@@ -208,8 +198,8 @@ def combine_videos(
                     new_width = int(clip_w * scale_factor)
                     new_height = int(clip_h * scale_factor)
 
-                    background = ColorClip(size=(video_width, video_height), color=(0, 0, 0)).with_duration(clip_duration)
-                    clip_resized = clip.resized(new_size=(new_width, new_height)).with_position("center")
+                    background = ColorClip(size=(video_width, video_height), color=(0, 0, 0)).set_duration(clip_duration)
+                    clip_resized = clip.resize(width=new_width, height=new_height).set_position("center")
                     clip = CompositeVideoClip([background, clip_resized])
                     
             shuffle_side = random.choice(["left", "right", "top", "bottom"])
@@ -433,13 +423,13 @@ def generate_video(
             # size=size,
         )
         duration = subtitle_item[0][1] - subtitle_item[0][0]
-        _clip = _clip.with_start(subtitle_item[0][0])
-        _clip = _clip.with_end(subtitle_item[0][1])
-        _clip = _clip.with_duration(duration)
+        _clip = _clip.set_start(subtitle_item[0][0])
+        _clip = _clip.set_end(subtitle_item[0][1])
+        _clip = _clip.set_duration(duration)
         if params.subtitle_position == "bottom":
-            _clip = _clip.with_position(("center", video_height * 0.95 - _clip.h))
+            _clip = _clip.set_position(("center", video_height * 0.95 - _clip.h))
         elif params.subtitle_position == "top":
-            _clip = _clip.with_position(("center", video_height * 0.05))
+            _clip = _clip.set_position(("center", video_height * 0.05))
         elif params.subtitle_position == "custom":
             # Ensure the subtitle is fully within the screen bounds
             margin = 10  # Additional margin, in pixels
@@ -449,13 +439,13 @@ def generate_video(
             custom_y = max(
                 min_y, min(custom_y, max_y)
             )  # Constrain the y value within the valid range
-            _clip = _clip.with_position(("center", custom_y))
+            _clip = _clip.set_position(("center", custom_y))
         else:  # center
-            _clip = _clip.with_position(("center", "center"))
+            _clip = _clip.set_position(("center", "center"))
         return _clip
 
     video_clip = VideoFileClip(video_path).without_audio()
-    audio_clip = AudioFileClip(audio_path).with_effects(
+    audio_clip = AudioFileClip(audio_path).set_effects(
         [afx.MultiplyVolume(params.voice_volume)]
     )
 
@@ -466,7 +456,7 @@ def generate_video(
             font_size=params.font_size,
         )
 
-    if subtitle_path and os.path.exists(subtitle_path):
+    if subtitle_path and os.path.exists(subtitle_path) and SubtitlesClip is not None:
         sub = SubtitlesClip(
             subtitles=subtitle_path, encoding="utf-8", make_textclip=make_textclip
         )
@@ -475,11 +465,13 @@ def generate_video(
             clip = create_text_clip(subtitle_item=item)
             text_clips.append(clip)
         video_clip = CompositeVideoClip([video_clip, *text_clips])
+    elif subtitle_path and os.path.exists(subtitle_path):
+        logger.warning("SubtitlesClip not available in this MoviePy version. Subtitles will not be added.")
 
     bgm_file = get_bgm_file(bgm_type=params.bgm_type, bgm_file=params.bgm_file)
     if bgm_file:
         try:
-            bgm_clip = AudioFileClip(bgm_file).with_effects(
+            bgm_clip = AudioFileClip(bgm_file).set_effects(
                 [
                     afx.MultiplyVolume(params.bgm_volume),
                     afx.AudioFadeOut(3),
@@ -490,7 +482,7 @@ def generate_video(
         except Exception as e:
             logger.error(f"failed to add bgm: {str(e)}")
 
-    video_clip = video_clip.with_audio(audio_clip)
+    video_clip = video_clip.set_audio(audio_clip)
     video_clip.write_videofile(
         output_file,
         audio_codec=audio_codec,
@@ -525,15 +517,15 @@ def preprocess_video(materials: List[MaterialInfo], clip_duration=4):
             # Create an image clip and set its duration to 3 seconds
             clip = (
                 ImageClip(material.url)
-                .with_duration(clip_duration)
-                .with_position("center")
+                .set_duration(clip_duration)
+                .set_position("center")
             )
             # Apply a zoom effect using the resize method.
             # A lambda function is used to make the zoom effect dynamic over time.
             # The zoom effect starts from the original size and gradually scales up to 120%.
             # t represents the current time, and clip.duration is the total duration of the clip (3 seconds).
             # Note: 1 represents 100% size, so 1.2 represents 120% size.
-            zoom_clip = clip.resized(
+            zoom_clip = clip.resize(
                 lambda t: 1 + (clip_duration * 0.03) * (t / clip.duration)
             )
 

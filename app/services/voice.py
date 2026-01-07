@@ -10,10 +10,11 @@ import requests
 from edge_tts import SubMaker, submaker
 from edge_tts.submaker import mktimestamp
 from loguru import logger
-from moviepy.video.tools import subtitles
+from moviepy.editor import AudioFileClip
 
 from app.config import config
 from app.utils import utils
+
 
 
 def get_siliconflow_voices() -> list[str]:
@@ -1220,11 +1221,10 @@ def siliconflow_tts(
                 # 获取音频文件的实际长度
                 try:
                     # 尝试使用moviepy获取音频长度
-                    from moviepy import AudioFileClip
 
                     audio_clip = AudioFileClip(voice_file)
                     audio_duration = audio_clip.duration
-                    audio_clip.close()
+                    del audio_clip
 
                     # 将音频长度转换为100纳秒单位（与edge_tts兼容）
                     audio_duration_100ns = int(audio_duration * 10000000)
@@ -1395,6 +1395,33 @@ def _format_text(text: str) -> str:
     text = text.strip()
     return text
 
+def time_to_ms(time_str):
+    """时间戳转毫秒"""
+    h, m, s_ms = time_str.split(':')
+    s, ms = s_ms.split(',')
+    return int(h)*3600000 + int(m)*60000 + int(s)*1000 + int(ms)
+
+# 手动解析字幕文件（替代 subtitles.file_to_subtitles）
+def file_to_subtitles(subtitle_file, encoding="utf-8"):
+    """简单 SRT 字幕解析器"""
+    subtitles = []
+    with open(subtitle_file, 'r', encoding=encoding) as f:
+        content = f.read().strip().split('\n\n')
+    
+    for block in content:
+        lines = block.split('\n')
+        if len(lines) >= 3:
+            # 解析时间戳: 00:00:01,000 --> 00:00:05,000
+            time_line = lines[1]
+            start, end = time_line.split(' --> ')
+            start_ms = time_to_ms(start.strip())
+            end_ms = time_to_ms(end.strip())
+            
+            text = ' '.join(lines[2:])
+            subtitles.append((start_ms, end_ms, text))
+    
+    return subtitles
+
 
 def create_subtitle(sub_maker: submaker.SubMaker, text: str, subtitle_file: str):
     """
@@ -1469,7 +1496,8 @@ def create_subtitle(sub_maker: submaker.SubMaker, text: str, subtitle_file: str)
             with open(subtitle_file, "w", encoding="utf-8") as file:
                 file.write("\n".join(sub_items) + "\n")
             try:
-                sbs = subtitles.file_to_subtitles(subtitle_file, encoding="utf-8")
+
+                sbs = file_to_subtitles(subtitle_file, encoding="utf-8")
                 duration = max([tb for ((ta, tb), txt) in sbs])
                 logger.info(
                     f"completed, subtitle file created: {subtitle_file}, duration: {duration}"

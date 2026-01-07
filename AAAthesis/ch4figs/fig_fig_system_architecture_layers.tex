@@ -1,0 +1,78 @@
+\begin{figure}[h]
+    \centering
+    \begin{tikzpicture}[
+        scale=0.9,
+        node distance=1.5cm,
+        auto,
+        font=\small,
+        box/.style={rectangle, draw, thick, minimum width=7cm, minimum height=0.8cm,
+                    text centered, fill=blue!10},
+        title/.style={text centered, font=\large\bfseries},
+        arrow/.style={->, thick, line width=1.5pt}
+    ]
+
+    % 标题
+    \node[title] at (3.5, 9) {系统五层分层架构设计};
+
+    % 展示层
+    \node[box, fill=cyan!20] (presentation) at (3.5, 7.5) {
+        \textbf{展示层（Presentation Layer）}\\
+        Streamlit Web UI (Port 8501)
+    };
+
+    % HTTP 通信
+    \node[text centered] at (3.5, 6.8) {$\Downarrow$ HTTP REST 通信 $\Downarrow$};
+
+    % API 层
+    \node[box, fill=green!20] (api) at (3.5, 6) {
+        \textbf{API 层（API Layer）}\\
+        FastAPI + Uvicorn (Port 8001)
+    };
+
+    % 函数调用
+    \node[text centered] at (3.5, 5.3) {$\Downarrow$ 函数调用 $\Downarrow$};
+
+    % 服务层
+    \node[box, fill=yellow!20, minimum width=8cm] (service) at (3.5, 4.5) {
+        \textbf{服务层（Service Layer）}\\
+        TaskManager | StateManager | ModelRegistry
+    };
+
+    % 函数调用
+    \node[text centered] at (3.5, 3.8) {$\Downarrow$ 函数调用 $\Downarrow$};
+
+    % 推理层
+    \node[box, fill=orange!20, minimum width=8cm] (inference) at (3.5, 3) {
+        \textbf{推理层（Inference Layer）}\\
+        Hallo2 Pipeline | 数据处理器
+    };
+
+    % 函数调用
+    \node[text centered] at (3.5, 2.3) {$\Downarrow$ 函数调用 $\Downarrow$};
+
+    % 模型层
+    \node[box, fill=red!20, minimum width=8cm] (model) at (3.5, 1.5) {
+        \textbf{模型层（Model Layer）}\\
+        PyTorch + CUDA + 预训练模型
+    };
+
+    % 右侧说明
+    \node[text centered, anchor=west] at (11.5, 7.5) {\small \textbf{用户交互}};
+    \node[text centered, anchor=west, font=\tiny] at (11.5, 7.1) {文件上传、参数配置};
+
+    \node[text centered, anchor=west] at (11.5, 6) {\small \textbf{请求处理}};
+    \node[text centered, anchor=west, font=\tiny] at (11.5, 5.6) {参数验证、路由};
+
+    \node[text centered, anchor=west] at (11.5, 4.5) {\small \textbf{业务逻辑}};
+    \node[text centered, anchor=west, font=\tiny] at (11.5, 4.1) {任务管理、状态管理};
+
+    \node[text centered, anchor=west] at (11.5, 3) {\small \textbf{核心推理}};
+    \node[text centered, anchor=west, font=\tiny] at (11.5, 2.6) {模型执行、数据处理};
+
+    \node[text centered, anchor=west] at (11.5, 1.5) {\small \textbf{硬件基础}};
+    \node[text centered, anchor=west, font=\tiny] at (11.5, 1.1) {深度学习框架};
+
+    \end{tikzpicture}
+    \caption{数字人视频生成系统五层分层架构}
+    \label{fig:system_architecture_layers}
+\end{figure}
