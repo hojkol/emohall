@@ -6,7 +6,11 @@ import toml
 from loguru import logger
 
 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
-config_file = f"{root_dir}/config.toml"
+config_file = os.path.join(root_dir, "emo_hallo", "config.toml")
+fallback_config_file = os.path.join(root_dir, "config.toml")
+
+if not os.path.exists(config_file) and os.path.exists(fallback_config_file):
+    config_file = fallback_config_file
 
 
 def load_config():
@@ -15,7 +19,9 @@ def load_config():
         shutil.rmtree(config_file)
 
     if not os.path.isfile(config_file):
-        example_file = f"{root_dir}/config.example.toml"
+        example_file = os.path.join(root_dir, "emo_hallo", "config.example.toml")
+        if not os.path.isfile(example_file):
+            example_file = os.path.join(root_dir, "config.example.toml")
         if os.path.isfile(example_file):
             shutil.copyfile(example_file, config_file)
             logger.info("copy config.example.toml to config.toml")
@@ -35,9 +41,15 @@ def load_config():
 def save_config():
     with open(config_file, "w", encoding="utf-8") as f:
         _cfg["app"] = app
-        _cfg["azure"] = azure
-        _cfg["siliconflow"] = siliconflow
         _cfg["ui"] = ui
+        if azure:
+            _cfg["azure"] = azure
+        else:
+            _cfg.pop("azure", None)
+        if siliconflow:
+            _cfg["siliconflow"] = siliconflow
+        else:
+            _cfg.pop("siliconflow", None)
         f.write(toml.dumps(_cfg))
 
 
